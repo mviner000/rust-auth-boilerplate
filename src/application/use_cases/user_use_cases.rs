@@ -30,3 +30,18 @@ impl<T: UserRepository> CreateUserUseCase<T> {
         self.user_repository.create(user_dto).await
     }
 }
+
+
+pub struct ListUsersUseCase<T: UserRepository> {
+    user_repository: T,
+}
+
+impl<T: UserRepository> ListUsersUseCase<T> {
+    pub fn new(user_repository: T) -> Self {
+        Self { user_repository }
+    }
+
+    pub async fn execute(&self) -> Result<Vec<User>, Box<dyn std::error::Error>> {
+        self.user_repository.find_all().await
+    }
+}

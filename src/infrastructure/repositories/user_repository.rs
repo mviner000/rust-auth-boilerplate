@@ -56,4 +56,21 @@ impl UserRepository for UserRepositoryImpl {
             name: new_user.1,
         })
     }
+
+    async fn find_all(&self) -> Result<Vec<User>, Box<dyn std::error::Error>> {
+        use self::users::dsl::*;
+
+        let conn = &mut self.pool.get()?;
+        let results = users
+            .select((id, name))
+            .load::<(i32, String)>(conn)?;
+
+        Ok(results
+            .into_iter()
+            .map(|(user_id, user_name)| User {
+                id: user_id,
+                name: user_name,
+            })
+            .collect())
+    }
 }

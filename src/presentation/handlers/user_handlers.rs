@@ -1,22 +1,25 @@
 use actix_web::{web, HttpResponse, Responder};
 
-use crate::application::use_cases::user_use_cases::{GetUserByNameUseCase, CreateUserUseCase};
+use crate::application::use_cases::user_use_cases::{GetUserByNameUseCase, CreateUserUseCase, ListUsersUseCase};
 use crate::domain::repositories::user_repository::UserRepository;
 use crate::domain::entities::user::CreateUserDto;
 
 pub struct UserHandlers<T: UserRepository> {
     get_user_use_case: GetUserByNameUseCase<T>,
     create_user_use_case: CreateUserUseCase<T>,
+    list_users_use_case: ListUsersUseCase<T>,
 }
 
 impl<T: UserRepository> UserHandlers<T> {
     pub fn new(
         get_user_use_case: GetUserByNameUseCase<T>,
         create_user_use_case: CreateUserUseCase<T>,
+        list_users_use_case: ListUsersUseCase<T>,
     ) -> Self {
         Self {
             get_user_use_case,
             create_user_use_case,
+            list_users_use_case,
         }
     }
 
@@ -33,16 +36,23 @@ impl<T: UserRepository> UserHandlers<T> {
             Err(_) => HttpResponse::InternalServerError().finish(),
         }
     }
+
+    pub async fn list_users(&self) -> impl Responder {
+        match self.list_users_use_case.execute().await {
+            Ok(users) => HttpResponse::Ok().json(users),
+            Err(_) => HttpResponse::InternalServerError().finish(),
+        }
+    }
 }
 
 pub fn configure<T: UserRepository + 'static>(
     cfg: &mut web::ServiceConfig,
-    handlers: web::Data<UserHandlers<T>>,
+    _handlers: web::Data<UserHandlers<T>>,
 ) {
     cfg.service(
         web::scope("/user")
             .route("", web::get().to(move |handlers: web::Data<UserHandlers<T>>| async move {
-                handlers.get_user().await
+                handlers.list_users().await
             }))
             .route("", web::post().to(move |handlers: web::Data<UserHandlers<T>>, user_dto: web::Json<CreateUserDto>| async move {
                 handlers.create_user(user_dto).await

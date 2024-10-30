@@ -8,7 +8,7 @@ use infrastructure::{
     config::database,
     repositories::user_repository::UserRepositoryImpl,
 };
-use application::use_cases::user_use_cases::{GetUserByNameUseCase, CreateUserUseCase};
+use application::use_cases::user_use_cases::{GetUserByNameUseCase, CreateUserUseCase, ListUsersUseCase};
 use presentation::handlers::user_handlers::{UserHandlers, configure};
 
 #[actix_web::main]
@@ -17,8 +17,14 @@ async fn main() -> std::io::Result<()> {
 
     let user_repository = UserRepositoryImpl::new(pool);
     let get_user_use_case = GetUserByNameUseCase::new(user_repository.clone());
-    let create_user_use_case = CreateUserUseCase::new(user_repository);
-    let user_handlers = web::Data::new(UserHandlers::new(get_user_use_case, create_user_use_case));
+    let create_user_use_case = CreateUserUseCase::new(user_repository.clone());
+    let list_users_use_case = ListUsersUseCase::new(user_repository);
+
+    let user_handlers = web::Data::new(UserHandlers::new(
+        get_user_use_case,
+        create_user_use_case,
+        list_users_use_case,
+    ));
 
     HttpServer::new(move || {
         App::new()
