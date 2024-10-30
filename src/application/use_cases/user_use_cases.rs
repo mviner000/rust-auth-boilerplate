@@ -3,17 +3,17 @@ use crate::domain::{
     repositories::user_repository::UserRepository,
 };
 
-pub struct GetUserByNameUseCase<T: UserRepository> {
+pub struct GetUserByIdUseCase<T: UserRepository> {
     user_repository: T,
 }
 
-impl<T: UserRepository> GetUserByNameUseCase<T> {
+impl<T: UserRepository> GetUserByIdUseCase<T> {
     pub fn new(user_repository: T) -> Self {
         Self { user_repository }
     }
 
-    pub async fn execute(&self, name: &str) -> Result<User, Box<dyn std::error::Error>> {
-        self.user_repository.find_by_name(name).await
+    pub async fn execute(&self, user_id: i32) -> Result<User, Box<dyn std::error::Error>> {
+        self.user_repository.find_by_id(user_id).await
     }
 }
 

@@ -28,12 +28,12 @@ table! {
 
 #[async_trait]
 impl UserRepository for UserRepositoryImpl {
-    async fn find_by_name(&self, username: &str) -> Result<User, Box<dyn std::error::Error>> {
+    async fn find_by_id(&self, user_id: i32) -> Result<User, Box<dyn std::error::Error>> {
         use self::users::dsl::*;
 
         let conn = &mut self.pool.get()?;
         let user = users
-            .filter(name.eq(username))
+            .filter(id.eq(user_id))
             .first::<(i32, String)>(conn)?;
 
         Ok(User {
