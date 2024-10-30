@@ -15,6 +15,8 @@ pub struct AuthRepositoryImpl {
 }
 
 impl AuthRepositoryImpl {
+
+    #[allow(dead_code)]
     pub fn new(pool: Pool<ConnectionManager<PgConnection>>) -> Self {
         Self { pool }
     }

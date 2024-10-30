@@ -1,3 +1,4 @@
+use std::fmt;
 use crate::domain::{
     entities::user::{User, CreateUserDto},
     repositories::user_repository::UserRepository,
@@ -6,6 +7,14 @@ use crate::domain::entities::user::UpdateUserDto;
 
 pub struct GetUserByIdUseCase<T: UserRepository> {
     user_repository: T,
+}
+
+impl<T: UserRepository> fmt::Debug for GetUserByIdUseCase<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("GetUserByIdUseCase")
+            .field("user_repository", &"UserRepository")
+            .finish()
+    }
 }
 
 impl<T: UserRepository> GetUserByIdUseCase<T> {

@@ -4,6 +4,7 @@ use actix_web_httpauth::extractors::bearer::BearerAuth;
 use jsonwebtoken::{decode, DecodingKey, Validation};
 use crate::domain::entities::auth::Claims;
 
+#[allow(dead_code)]
 pub async fn validator(req: ServiceRequest, credentials: BearerAuth)
                        -> Result<ServiceRequest, (Error, ServiceRequest)> {
     let jwt_secret = std::env::var("JWT_SECRET").expect("JWT_SECRET must be set");
