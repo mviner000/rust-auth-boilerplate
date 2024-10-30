@@ -7,6 +7,7 @@ use crate::domain::{
     entities::user::{User, CreateUserDto},
     repositories::user_repository::UserRepository,
 };
+use crate::domain::entities::user::UpdateUserDto;
 
 #[derive(Clone)]
 pub struct UserRepositoryImpl {
@@ -72,5 +73,32 @@ impl UserRepository for UserRepositoryImpl {
                 name: user_name,
             })
             .collect())
+    }
+
+    async fn update(&self, user_id: i32, user_dto: UpdateUserDto) -> Result<User, Box<dyn std::error::Error>> {
+        use self::users::dsl::*;
+
+        let conn = &mut self.pool.get()?;
+        let updated_user = diesel::update(users)
+            .filter(id.eq(user_id))
+            .set(name.eq(user_dto.name))
+            .returning((id, name))
+            .get_result::<(i32, String)>(conn)?;
+
+        Ok(User {
+            id: updated_user.0,
+            name: updated_user.1,
+        })
+    }
+
+    async fn delete(&self, user_id: i32) -> Result<(), Box<dyn std::error::Error>> {
+        use self::users::dsl::*;
+
+        let conn = &mut self.pool.get()?;
+        diesel::delete(users)
+            .filter(id.eq(user_id))
+            .execute(conn)?;
+
+        Ok(())
     }
 }

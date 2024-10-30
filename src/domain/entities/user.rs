@@ -10,3 +10,8 @@ pub struct User {
 pub struct CreateUserDto {
     pub name: String,
 }
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct UpdateUserDto {
+    pub name: String,
+}
