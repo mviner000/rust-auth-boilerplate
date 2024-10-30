@@ -9,7 +9,6 @@ use chrono::Utc;
 use crate::domain::entities::account::{Account, UpdateAccountDto};
 use crate::domain::repositories::account_repository::AccountRepository;
 
-
 #[derive(Queryable)]
 struct AccountRecord {
     id: i32,
@@ -53,6 +52,12 @@ impl AccountRepository for AccountRepositoryImpl {
             created_at: record.created_at,
             updated_at: record.updated_at,
         })
+    }
+
+    // Implement the missing get_by_id method
+    async fn get_by_id(&self, user_id: i32) -> Result<Account, Box<dyn std::error::Error>> {
+        // Since we're using user_id as the identifier, we can reuse find_by_user_id
+        self.find_by_user_id(user_id).await
     }
 
     async fn update(&self, user_id: i32, account_dto: UpdateAccountDto) -> Result<Account, Box<dyn std::error::Error>> {

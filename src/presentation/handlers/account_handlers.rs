@@ -1,23 +1,37 @@
 use actix_web::{web, HttpResponse, Responder};
 use actix_multipart::Multipart;
 use futures::{StreamExt, TryStreamExt};
+use tracing::info;
 use crate::domain::repositories::account_repository::AccountRepository;
-use crate::application::use_cases::account_use_cases::{UpdateAccountUseCase, UploadAvatarUseCase};
+use crate::application::use_cases::account_use_cases::{GetAccountUseCase, UpdateAccountUseCase, UploadAvatarUseCase};
 use crate::domain::entities::account::UpdateAccountDto;
 
 pub struct AccountHandlers<T: AccountRepository> {
+    get_account_use_case: GetAccountUseCase<T>,
     update_account_use_case: UpdateAccountUseCase<T>,
     upload_avatar_use_case: UploadAvatarUseCase<T>,
 }
 
 impl<T: AccountRepository> AccountHandlers<T> {
     pub fn new(
+        get_account_use_case: GetAccountUseCase<T>,
         update_account_use_case: UpdateAccountUseCase<T>,
         upload_avatar_use_case: UploadAvatarUseCase<T>,
     ) -> Self {
         Self {
+            get_account_use_case,
             update_account_use_case,
             upload_avatar_use_case,
+        }
+    }
+
+    pub async fn get_account(&self, user_id: web::Path<i32>) -> impl Responder {
+        match self.get_account_use_case.execute(user_id.into_inner()).await {
+            Ok(account) => HttpResponse::Ok().json(account),
+            Err(e) => HttpResponse::InternalServerError().json(serde_json::json!({
+                "error": "Failed to get account",
+                "message": e.to_string()
+            })),
         }
     }
 
@@ -69,15 +83,19 @@ impl<T: AccountRepository> AccountHandlers<T> {
 
 pub fn configure<T: AccountRepository + 'static>(
     cfg: &mut web::ServiceConfig,
-    _handlers: web::Data<AccountHandlers<T>>,
+    handlers: web::Data<AccountHandlers<T>>,
 ) {
     cfg.service(
-        web::scope("/account")
+        web::scope("/api/v1/account")
+            .route("/{id}", web::get().to(move |handlers: web::Data<AccountHandlers<T>>, id: web::Path<i32>| async move {
+                handlers.get_account(id).await
+            }))
             .route("/{id}", web::put().to(move |handlers: web::Data<AccountHandlers<T>>, id: web::Path<i32>, account_dto: web::Json<UpdateAccountDto>| async move {
                 handlers.update_account(id, account_dto).await
             }))
             .route("/{id}/avatar", web::post().to(move |handlers: web::Data<AccountHandlers<T>>, id: web::Path<i32>, payload: Multipart| async move {
+                info!("Received avatar upload request for user {}", id);
                 handlers.upload_avatar(id, payload).await
-            })),
+            }))
     );
 }
