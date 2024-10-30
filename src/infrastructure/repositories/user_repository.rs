@@ -23,7 +23,9 @@ impl UserRepositoryImpl {
 table! {
     users (id) {
         id -> Int4,
-        name -> Varchar,
+        username -> Varchar,
+        email -> Varchar,
+        password -> Varchar,
     }
 }
 
@@ -35,11 +37,13 @@ impl UserRepository for UserRepositoryImpl {
         let conn = &mut self.pool.get()?;
         let user = users
             .filter(id.eq(user_id))
-            .first::<(i32, String)>(conn)?;
+            .first::<(i32, String, String, String)>(conn)?;
 
         Ok(User {
             id: user.0,
-            name: user.1,
+            username: user.1,
+            email: user.2,
+            password: user.3,
         })
     }
 
@@ -48,13 +52,19 @@ impl UserRepository for UserRepositoryImpl {
 
         let conn = &mut self.pool.get()?;
         let new_user = diesel::insert_into(users)
-            .values(name.eq(user_dto.name))
-            .returning((id, name))
-            .get_result::<(i32, String)>(conn)?;
+            .values((
+                username.eq(&user_dto.username),
+                email.eq(&user_dto.email),
+                password.eq(&user_dto.password),
+            ))
+            .returning((id, username, email, password))
+            .get_result::<(i32, String, String, String)>(conn)?;
 
         Ok(User {
             id: new_user.0,
-            name: new_user.1,
+            username: new_user.1,
+            email: new_user.2,
+            password: new_user.3,
         })
     }
 
@@ -63,14 +73,16 @@ impl UserRepository for UserRepositoryImpl {
 
         let conn = &mut self.pool.get()?;
         let results = users
-            .select((id, name))
-            .load::<(i32, String)>(conn)?;
+            .select((id, username, email, password))
+            .load::<(i32, String, String, String)>(conn)?;
 
         Ok(results
             .into_iter()
-            .map(|(user_id, user_name)| User {
+            .map(|(user_id, user_username, user_email, user_password)| User {
                 id: user_id,
-                name: user_name,
+                username: user_username,
+                email: user_email,
+                password: user_password,
             })
             .collect())
     }
@@ -81,13 +93,19 @@ impl UserRepository for UserRepositoryImpl {
         let conn = &mut self.pool.get()?;
         let updated_user = diesel::update(users)
             .filter(id.eq(user_id))
-            .set(name.eq(user_dto.name))
-            .returning((id, name))
-            .get_result::<(i32, String)>(conn)?;
+            .set((
+                username.eq(&user_dto.username),
+                email.eq(&user_dto.email),
+                password.eq(&user_dto.password),
+            ))
+            .returning((id, username, email, password))
+            .get_result::<(i32, String, String, String)>(conn)?;
 
         Ok(User {
             id: updated_user.0,
-            name: updated_user.1,
+            username: updated_user.1,
+            email: updated_user.2,
+            password: updated_user.3,
         })
     }
 
