@@ -86,7 +86,7 @@ pub fn configure<T: AccountRepository + 'static>(
     handlers: web::Data<AccountHandlers<T>>,
 ) {
     cfg.service(
-        web::scope("/api/v1/account")
+        web::scope("/account")
             .route("/{id}", web::get().to(move |handlers: web::Data<AccountHandlers<T>>, id: web::Path<i32>| async move {
                 handlers.get_account(id).await
             }))

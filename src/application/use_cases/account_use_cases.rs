@@ -1,8 +1,9 @@
 use std::path::PathBuf;
 use uuid::Uuid;
-use image::{ImageFormat, imageops};
+use image::{ImageFormat, imageops, DynamicImage};
 use tokio::fs;
 use tracing::info;
+use webp::Encoder;
 use crate::domain::repositories::account_repository::AccountRepository;
 use crate::domain::entities::account::{Account, UpdateAccountDto, AvatarUploadResponse};
 
@@ -47,6 +48,17 @@ impl<T: AccountRepository> UploadAvatarUseCase<T> {
         }
     }
 
+    async fn convert_to_webp(img: &DynamicImage) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+        let rgba = img.to_rgba8();
+        let width = rgba.width() as u32;
+        let height = rgba.height() as u32;
+
+        let encoder = Encoder::from_rgba(&rgba, width, height);
+        // Use encode_simple with quality parameter directly
+        let encoded = encoder.encode(80.0); // quality parameter between 0-100
+        Ok(encoded.to_vec())
+    }
+
     pub async fn execute(&self, user_id: i32, image_data: Vec<u8>) -> Result<AvatarUploadResponse, Box<dyn std::error::Error>> {
         info!("Processing avatar upload for user {}", user_id);
 
@@ -54,29 +66,34 @@ impl<T: AccountRepository> UploadAvatarUseCase<T> {
         fs::create_dir_all(&self.upload_dir).await?;
         info!("Upload directory created/verified");
 
-        // Generate unique filename
-        let filename = format!("{}.avif", Uuid::new_v4());
-        info!("Generated filename: {}", filename);
+        // Generate filenames with .webp extension
+        let large_webp = format!("300_{}.webp", Uuid::new_v4());
+        let small_webp = format!("40_{}.webp", Uuid::new_v4());
+
+        let large_webp_path = self.upload_dir.join(&large_webp);
+        let small_webp_path = self.upload_dir.join(&small_webp);
 
         // Process images
         let img = image::load_from_memory(&image_data)?;
         info!("Image loaded from memory");
 
-        // Create 300x300 version
+        // Create and convert 300x300 version
         let large = imageops::resize(&img, 300, 300, imageops::FilterType::Lanczos3);
-        let large_path = self.upload_dir.join(format!("300_{}", &filename));
-        large.save_with_format(&large_path, ImageFormat::Avif)?;
-        info!("Large image saved: {:?}", large_path);
+        let large_img = DynamicImage::ImageRgba8(large);
+        let large_webp_data = Self::convert_to_webp(&large_img).await?;
+        tokio::fs::write(&large_webp_path, large_webp_data).await?;
+        info!("Large image saved: {:?}", large_webp_path);
 
-        // Create 40x40 version
+        // Create and convert 40x40 version
         let small = imageops::resize(&img, 40, 40, imageops::FilterType::Lanczos3);
-        let small_path = self.upload_dir.join(format!("40_{}", &filename));
-        small.save_with_format(&small_path, ImageFormat::Avif)?;
-        info!("Small image saved: {:?}", small_path);
+        let small_img = DynamicImage::ImageRgba8(small);
+        let small_webp_data = Self::convert_to_webp(&small_img).await?;
+        tokio::fs::write(&small_webp_path, small_webp_data).await?;
+        info!("Small image saved: {:?}", small_webp_path);
 
         // Generate URLs
-        let large_url = format!("/uploads/300_{}", filename);
-        let small_url = format!("/uploads/40_{}", filename);
+        let large_url = format!("/uploads/{}", large_webp);
+        let small_url = format!("/uploads/{}", small_webp);
 
         // Update database
         info!("Updating database with new avatar URLs");
