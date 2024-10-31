@@ -2,8 +2,8 @@ use async_trait::async_trait;
 use diesel::prelude::*;
 use diesel::r2d2::{ConnectionManager, Pool};
 use diesel::PgConnection;
-use tracing::debug;  // Add this import
-use bcrypt::verify;  // Remove DEFAULT_COST
+use tracing::debug;
+use bcrypt::verify;
 
 use crate::domain::entities::auth::AuthUser;
 use crate::domain::entities::user::User;
@@ -15,8 +15,7 @@ pub struct AuthRepositoryImpl {
 }
 
 impl AuthRepositoryImpl {
-
-    #[allow(dead_code)]
+    #[allow(dead_code)]  // Added because the compiler can't detect usage through DI
     pub fn new(pool: Pool<ConnectionManager<PgConnection>>) -> Self {
         Self { pool }
     }
@@ -31,14 +30,12 @@ impl AuthRepository for AuthRepositoryImpl {
 
         let conn = &mut self.pool.get()?;
 
-        // First find the user by username only
         let user_result = users
             .filter(username.eq(&auth.username))
             .first::<(i32, String, String, String)>(conn);
 
         match user_result {
             Ok(user) => {
-                // Verify the password using bcrypt
                 if verify(&auth.password, &user.3)? {
                     debug!("Password verified successfully");
                     Ok(User {

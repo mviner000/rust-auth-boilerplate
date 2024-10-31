@@ -7,25 +7,23 @@ use crate::domain::repositories::auth_repository::AuthRepository;
 
 pub struct LoginUseCase<T: AuthRepository> {
     auth_repository: T,
-    jwt_secret: String,
+    secret_key: String,
 }
 
-// Add custom Debug implementation
 impl<T: AuthRepository> fmt::Debug for LoginUseCase<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("LoginUseCase")
-            .field("auth_repository", &"AuthRepository")  // Don't expose internal details
-            .field("jwt_secret", &"[REDACTED]")  // Don't expose the secret
+            .field("auth_repository", &"AuthRepository")
+            .field("secret_key", &"[REDACTED]")
             .finish()
     }
 }
 
-
 impl<T: AuthRepository> LoginUseCase<T> {
-    pub fn new(auth_repository: T, jwt_secret: String) -> Self {
+    pub fn new(auth_repository: T, secret_key: String) -> Self {
         Self {
             auth_repository,
-            jwt_secret,
+            secret_key,
         }
     }
 
@@ -43,7 +41,7 @@ impl<T: AuthRepository> LoginUseCase<T> {
         let token = encode(
             &Header::default(),
             &claims,
-            &EncodingKey::from_secret(self.jwt_secret.as_bytes()),
+            &EncodingKey::from_secret(self.secret_key.as_bytes()),
         )?;
 
         Ok(TokenResponse {

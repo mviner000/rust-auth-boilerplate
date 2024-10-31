@@ -4,15 +4,15 @@ use actix_web_httpauth::extractors::bearer::BearerAuth;
 use jsonwebtoken::{decode, DecodingKey, Validation};
 use crate::domain::entities::auth::Claims;
 
-#[allow(dead_code)]
+#[allow(dead_code)]  // Added because the compiler can't detect usage through middleware configuration
 pub async fn validator(req: ServiceRequest, credentials: BearerAuth)
                        -> Result<ServiceRequest, (Error, ServiceRequest)> {
-    let jwt_secret = std::env::var("JWT_SECRET").expect("JWT_SECRET must be set");
+    let secret_key = std::env::var("SECRET_KEY").expect("SECRET_KEY must be set");
     let token = credentials.token();
 
     match decode::<Claims>(
         token,
-        &DecodingKey::from_secret(jwt_secret.as_bytes()),
+        &DecodingKey::from_secret(secret_key.as_bytes()),
         &Validation::default(),
     ) {
         Ok(_) => Ok(req),

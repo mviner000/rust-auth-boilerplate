@@ -50,7 +50,7 @@ async fn main() -> std::io::Result<()> {
 
     info!("Database connection established");
 
-    let jwt_secret = std::env::var("JWT_SECRET").expect("JWT_SECRET must be set");
+    let secret_key = std::env::var("SECRET_KEY").expect("SECRET_KEY must be set");
 
     // Create uploads directory if it doesn't exist
     let upload_dir = PathBuf::from("uploads");
@@ -69,7 +69,7 @@ async fn main() -> std::io::Result<()> {
     let update_user_use_case = UpdateUserUseCase::new(user_repository.clone());
     let delete_user_use_case = DeleteUserUseCase::new(user_repository);
 
-    let login_use_case = LoginUseCase::new(auth_repository, jwt_secret);
+    let login_use_case = LoginUseCase::new(auth_repository, secret_key);
 
     let upload_dir = PathBuf::from("uploads");
     let get_account_use_case = GetAccountUseCase::new(account_repository.clone());
