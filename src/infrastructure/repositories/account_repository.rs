@@ -1,4 +1,3 @@
-use crate::schema;
 use crate::schema::accounts;
 use async_trait::async_trait;
 use diesel::prelude::*;
@@ -54,11 +53,6 @@ impl AccountRepository for AccountRepositoryImpl {
         })
     }
 
-    // Implement the missing get_by_id method
-    async fn get_by_id(&self, user_id: i32) -> Result<Account, Box<dyn std::error::Error>> {
-        // Since we're using user_id as the identifier, we can reuse find_by_user_id
-        self.find_by_user_id(user_id).await
-    }
 
     async fn update(&self, user_id: i32, account_dto: UpdateAccountDto) -> Result<Account, Box<dyn std::error::Error>> {
         let conn = &mut self.pool.get()?;

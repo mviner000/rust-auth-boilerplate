@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 use uuid::Uuid;
-use image::{ImageFormat, imageops, DynamicImage};
+use image::{imageops, DynamicImage};
 use tokio::fs;
 use tracing::info;
 use webp::Encoder;

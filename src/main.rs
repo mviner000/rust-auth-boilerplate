@@ -9,7 +9,7 @@ use tracing::info;
 use actix_cors::Cors;
 use actix_web::{http::header, web, App, HttpServer};
 use actix_web_httpauth::middleware::HttpAuthentication;
-use tracing::{debug, Level};
+use tracing::{Level};
 use tracing_subscriber::FmtSubscriber;
 use std::path::PathBuf;
 

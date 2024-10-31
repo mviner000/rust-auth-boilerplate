@@ -83,7 +83,7 @@ impl<T: AccountRepository> AccountHandlers<T> {
 
 pub fn configure<T: AccountRepository + 'static>(
     cfg: &mut web::ServiceConfig,
-    handlers: web::Data<AccountHandlers<T>>,
+    _handlers: web::Data<AccountHandlers<T>>,
 ) {
     cfg.service(
         web::scope("/account")
