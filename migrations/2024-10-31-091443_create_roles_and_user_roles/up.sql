@@ -1,10 +1,10 @@
 -- Your SQL goes here
 CREATE TABLE roles (
-                       id SERIAL PRIMARY KEY,
-                       name VARCHAR(50) NOT NULL UNIQUE,
-                       description VARCHAR(255),
-                       created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                       updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+   id SERIAL PRIMARY KEY,
+   name VARCHAR(50) NOT NULL UNIQUE,
+   description VARCHAR(255),
+   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE INDEX index_roles_on_name ON roles (name);
@@ -20,7 +20,6 @@ CREATE TABLE user_roles (
 CREATE INDEX index_user_roles_on_user_id ON user_roles (user_id);
 CREATE INDEX index_user_roles_on_role_id ON user_roles (role_id);
 
--- Insert initial roles
 INSERT INTO roles (name, description) VALUES
       ('superuser', 'System administrator with full access'),
       ('admin', 'User with elevated privileges for content moderation'),

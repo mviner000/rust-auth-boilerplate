@@ -15,8 +15,8 @@ struct AccountRecord {
     first_name: Option<String>,
     middle_name: Option<String>,
     last_name: Option<String>,
-    avatar_300x300_url: String,
-    avatar_40x40_url: String,
+    avatar_300x300_url: Option<String>,
+    avatar_40x40_url: Option<String>,
     created_at: chrono::NaiveDateTime,
     updated_at: chrono::NaiveDateTime,
 }

@@ -5,10 +5,9 @@ CREATE TABLE accounts (
       first_name VARCHAR,
       middle_name VARCHAR,
       last_name VARCHAR,
-      avatar_300x300_url VARCHAR NOT NULL,
-      avatar_40x40_url VARCHAR NOT NULL,
+      avatar_300x300_url VARCHAR NULL,
+      avatar_40x40_url VARCHAR NULL,
       created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
-
 CREATE INDEX index_accounts_on_user_id ON accounts (user_id);

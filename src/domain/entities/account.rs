@@ -8,8 +8,8 @@ pub struct Account {
     pub first_name: Option<String>,
     pub middle_name: Option<String>,
     pub last_name: Option<String>,
-    pub avatar_300x300_url: String,
-    pub avatar_40x40_url: String,
+    pub avatar_300x300_url: Option<String>,
+    pub avatar_40x40_url: Option<String>,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
 }
