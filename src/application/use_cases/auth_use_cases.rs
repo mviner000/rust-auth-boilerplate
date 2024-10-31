@@ -8,29 +8,27 @@ use crate::domain::repositories::auth_repository::AuthRepository;
 
 pub struct LoginUseCase<T: AuthRepository> {
     auth_repository: T,
-    secret_key: String,
 }
 
 impl<T: AuthRepository> fmt::Debug for LoginUseCase<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("LoginUseCase")
             .field("auth_repository", &"AuthRepository")
-            .field("secret_key", &"[REDACTED]")
             .finish()
     }
 }
 
 impl<T: AuthRepository> LoginUseCase<T> {
-    pub fn new(auth_repository: T, secret_key: String) -> Self {
+    pub fn new(auth_repository: T) -> Self {
         Self {
             auth_repository,
-            secret_key,
         }
     }
 
     pub async fn execute(&self, auth: AuthUser) -> Result<TokenResponse, Box<dyn std::error::Error + Send + Sync>> {
         let user = self.auth_repository.authenticate(auth).await?;
 
+        let secret_key = std::env::var("SECRET_KEY").expect("SECRET_KEY must be set");
         let now = Utc::now();
         let exp = (now + Duration::hours(24)).timestamp();
         let claims = Claims {
@@ -42,7 +40,7 @@ impl<T: AuthRepository> LoginUseCase<T> {
         let token = encode(
             &Header::default(),
             &claims,
-            &EncodingKey::from_secret(self.secret_key.as_bytes()),
+            &EncodingKey::from_secret(secret_key.as_bytes()),
         )?;
 
         Ok(TokenResponse {

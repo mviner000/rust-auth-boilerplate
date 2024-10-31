@@ -59,7 +59,7 @@ async fn main() -> std::io::Result<()> {
 
     // Initialize repositories with properly cloned pools
     let user_repository = UserRepositoryImpl::new(pool.clone());
-    let auth_repository = AuthRepositoryImpl::new(pool.clone(), secret_key.clone());
+    let auth_repository = AuthRepositoryImpl::new(pool.clone(), secret_key);
     let account_repository = AccountRepositoryImpl::new(pool.clone());
 
     // Initialize use cases
@@ -69,7 +69,7 @@ async fn main() -> std::io::Result<()> {
     let update_user_use_case = UpdateUserUseCase::new(user_repository.clone());
     let delete_user_use_case = DeleteUserUseCase::new(user_repository);
 
-    let login_use_case = LoginUseCase::new(auth_repository.clone(), secret_key);
+    let login_use_case = LoginUseCase::new(auth_repository.clone());
     let register_use_case = RegisterUseCase::new(auth_repository);
 
     let upload_dir = PathBuf::from("uploads");
