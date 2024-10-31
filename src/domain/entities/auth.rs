@@ -19,3 +19,13 @@ pub struct TokenResponse {
     pub token_type: String,
     pub expires_in: i64,
 }
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct RegisterUserDto {
+    pub username: String,
+    pub email: String,
+    pub password: String,
+    pub first_name: Option<String>,
+    pub middle_name: Option<String>,
+    pub last_name: Option<String>,
+}

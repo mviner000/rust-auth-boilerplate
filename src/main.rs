@@ -22,10 +22,10 @@ use infrastructure::{
     },
 };
 
-use application::use_cases::{
+use crate::application::use_cases::{
     account_use_cases::{GetAccountUseCase, UpdateAccountUseCase, UploadAvatarUseCase},
     user_use_cases::{GetUserByIdUseCase, CreateUserUseCase, ListUsersUseCase, DeleteUserUseCase, UpdateUserUseCase},
-    auth_use_cases::LoginUseCase,
+    auth_use_cases::{LoginUseCase, RegisterUseCase},
 };
 
 use presentation::{
@@ -57,9 +57,9 @@ async fn main() -> std::io::Result<()> {
     std::fs::create_dir_all(&upload_dir)?;
     info!("Upload directory ensured: {:?}", upload_dir);
 
-    // Initialize repositories
+    // Initialize repositories with properly cloned pools
     let user_repository = UserRepositoryImpl::new(pool.clone());
-    let auth_repository = AuthRepositoryImpl::new(pool.clone());
+    let auth_repository = AuthRepositoryImpl::new(pool.clone(), secret_key.clone());
     let account_repository = AccountRepositoryImpl::new(pool.clone());
 
     // Initialize use cases
@@ -69,7 +69,8 @@ async fn main() -> std::io::Result<()> {
     let update_user_use_case = UpdateUserUseCase::new(user_repository.clone());
     let delete_user_use_case = DeleteUserUseCase::new(user_repository);
 
-    let login_use_case = LoginUseCase::new(auth_repository, secret_key);
+    let login_use_case = LoginUseCase::new(auth_repository.clone(), secret_key);
+    let register_use_case = RegisterUseCase::new(auth_repository);
 
     let upload_dir = PathBuf::from("uploads");
     let get_account_use_case = GetAccountUseCase::new(account_repository.clone());
@@ -85,7 +86,10 @@ async fn main() -> std::io::Result<()> {
         delete_user_use_case,
     ));
 
-    let auth_handlers = web::Data::new(AuthHandlers::new(login_use_case));
+    let auth_handlers = web::Data::new(AuthHandlers::new(
+        login_use_case,
+        register_use_case,
+    ));
 
     let account_handlers = web::Data::new(AccountHandlers::new(
         get_account_use_case,
