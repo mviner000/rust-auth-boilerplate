@@ -7,8 +7,8 @@ diesel::table! {
         first_name -> Nullable<Varchar>,
         middle_name -> Nullable<Varchar>,
         last_name -> Nullable<Varchar>,
-        avatar_300x300_url -> Varchar,
-        avatar_40x40_url -> Varchar,
+        avatar_300x300_url -> Nullable<Varchar>,
+        avatar_40x40_url -> Nullable<Varchar>,
         created_at -> Timestamp,
         updated_at -> Timestamp,
     }
