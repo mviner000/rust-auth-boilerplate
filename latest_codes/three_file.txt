@@ -1,0 +1,354 @@
+can this upload_avatar_test.rs sufficient to test our "upload avatar backend"?
+
+--> tests/upload_avatar_test.rs
+
+use reqwest::{Client, multipart, header};
+use std::{error::Error, fs, path::Path};
+
+#[tokio::test]
+async fn test_avatar_upload_and_accessibility() -> Result<(), Box<dyn Error>> {
+    let account_id = "12"; // Ensure this is a valid account ID
+    let file_path = "./tests/test_avatar.jpg"; // Path to your test image
+    let bearer_token = "your_jwt_token_here"; // Replace with your actual JWT token
+
+    let client = Client::new();
+
+    // Check if the server is running
+    let server_url = "http://127.0.0.1:8080/api/v1/user"; // Checking server status
+    let server_response = client.get(server_url).header(header::AUTHORIZATION, format!("Bearer {}", bearer_token)).send().await;
+
+    match server_response {
+        Ok(response) if response.status().is_success() => {
+            println!("Server is running.");
+        }
+        _ => {
+            return Err("Server is not reachable.".into());
+        }
+    }
+
+    // Read the file bytes and prepare the multipart form
+    let file_bytes = fs::read(Path::new(file_path))?;
+    let part = multipart::Part::bytes(file_bytes).file_name("avatar.jpg");
+    let form = multipart::Form::new().part("avatar", part);
+
+    // Upload the file to the avatar endpoint
+    let upload_url = format!("http://localhost:8080/api/v1/account/{}/avatar", account_id); // Correct URL for upload
+    let response = client
+        .post(&upload_url)
+        .multipart(form)
+        .header(header::AUTHORIZATION, format!("Bearer {}", bearer_token))
+        .send()
+        .await?;
+
+    assert!(
+        response.status().is_success(),
+        "Failed to upload avatar: {:?}",
+        response.text().await?
+    );
+
+    // Verify image access at specified sizes
+    let sizes = vec!["300", "40"];
+    for size in &sizes {
+        let image_url = format!("http://localhost:8080/uploads/{}_avatar.jpg", size);
+        let image_response = client
+            .get(&image_url)
+            .header(header::AUTHORIZATION, format!("Bearer {}", bearer_token))
+            .send()
+            .await?;
+        assert!(
+            image_response.status().is_success(),
+            "Image at size {} not accessible.",
+            size
+        );
+    }
+
+    Ok(())
+}
+
+--> test/avatar.jpg
+
+test_avatar.jpg
+
+--> application/use_cases/account_use_cases.rs
+
+use std::path::PathBuf;
+use uuid::Uuid;
+use image::{ImageFormat, imageops};
+use tokio::fs;
+use tracing::info;
+use crate::domain::repositories::account_repository::AccountRepository;
+use crate::domain::entities::account::{Account, UpdateAccountDto, AvatarUploadResponse};
+
+pub struct GetAccountUseCase<T: AccountRepository> {
+    account_repository: T,
+}
+
+impl<T: AccountRepository> GetAccountUseCase<T> {
+    pub fn new(account_repository: T) -> Self {
+        Self { account_repository }
+    }
+
+    pub async fn execute(&self, user_id: i32) -> Result<Account, Box<dyn std::error::Error>> {
+        self.account_repository.find_by_user_id(user_id).await
+    }
+}
+
+pub struct UpdateAccountUseCase<T: AccountRepository> {
+    account_repository: T,
+}
+
+impl<T: AccountRepository> UpdateAccountUseCase<T> {
+    pub fn new(account_repository: T) -> Self {
+        Self { account_repository }
+    }
+
+    pub async fn execute(&self, user_id: i32, account_dto: UpdateAccountDto) -> Result<Account, Box<dyn std::error::Error>> {
+        self.account_repository.update(user_id, account_dto).await
+    }
+}
+
+pub struct UploadAvatarUseCase<T: AccountRepository> {
+    account_repository: T,
+    upload_dir: PathBuf,
+}
+
+impl<T: AccountRepository> UploadAvatarUseCase<T> {
+    pub fn new(account_repository: T, upload_dir: PathBuf) -> Self {
+        Self {
+            account_repository,
+            upload_dir,
+        }
+    }
+
+    pub async fn execute(&self, user_id: i32, image_data: Vec<u8>) -> Result<AvatarUploadResponse, Box<dyn std::error::Error>> {
+        info!("Processing avatar upload for user {}", user_id);
+
+        // Create upload directory if it doesn't exist
+        fs::create_dir_all(&self.upload_dir).await?;
+        info!("Upload directory created/verified");
+
+        // Generate unique filename
+        let filename = format!("{}.avif", Uuid::new_v4());
+        info!("Generated filename: {}", filename);
+
+        // Process images
+        let img = image::load_from_memory(&image_data)?;
+        info!("Image loaded from memory");
+
+        // Create 300x300 version
+        let large = imageops::resize(&img, 300, 300, imageops::FilterType::Lanczos3);
+        let large_path = self.upload_dir.join(format!("300_{}", &filename));
+        large.save_with_format(&large_path, ImageFormat::Avif)?;
+        info!("Large image saved: {:?}", large_path);
+
+        // Create 40x40 version
+        let small = imageops::resize(&img, 40, 40, imageops::FilterType::Lanczos3);
+        let small_path = self.upload_dir.join(format!("40_{}", &filename));
+        small.save_with_format(&small_path, ImageFormat::Avif)?;
+        info!("Small image saved: {:?}", small_path);
+
+        // Generate URLs
+        let large_url = format!("/uploads/300_{}", filename);
+        let small_url = format!("/uploads/40_{}", filename);
+
+        // Update database
+        info!("Updating database with new avatar URLs");
+        self.account_repository.update_avatar(user_id, large_url.clone(), small_url.clone()).await?;
+        info!("Database updated successfully");
+
+        Ok(AvatarUploadResponse {
+            avatar_300x300_url: large_url,
+            avatar_40x40_url: small_url,
+            message: "Avatar uploaded successfully".to_string(),
+        })
+    }
+}
+
+--> src/domain/entities/account.rs
+
+use serde::{Deserialize, Serialize};
+use chrono::NaiveDateTime;
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Account {
+    pub id: i32,
+    pub user_id: i32,
+    pub first_name: Option<String>,
+    pub middle_name: Option<String>,
+    pub last_name: Option<String>,
+    pub avatar_300x300_url: String,
+    pub avatar_40x40_url: String,
+    pub created_at: NaiveDateTime,
+    pub updated_at: NaiveDateTime,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct UpdateAccountDto {
+    pub first_name: Option<String>,
+    pub middle_name: Option<String>,
+    pub last_name: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct AvatarUploadResponse {
+    pub avatar_300x300_url: String,
+    pub avatar_40x40_url: String,
+    pub message: String,
+}
+
+ --> src/domain/repositories/account_repository.rs
+
+use async_trait::async_trait;
+use crate::domain::entities::account::{Account, UpdateAccountDto};
+
+#[async_trait]
+pub trait AccountRepository {
+    async fn find_by_user_id(&self, user_id: i32) -> Result<Account, Box<dyn std::error::Error>>;
+    async fn update(&self, user_id: i32, account: UpdateAccountDto) -> Result<Account, Box<dyn std::error::Error>>;
+    async fn update_avatar(&self, user_id: i32, avatar_300x300_url: String, avatar_40x40_url: String) -> Result<Account, Box<dyn std::error::Error>>;
+
+    async fn get_by_id(&self, user_id: i32) -> Result<Account, Box<dyn std::error::Error>>;
+}
+
+--> infrastructure/repositories/account_repository.rs
+
+use crate::schema;
+use crate::schema::accounts;
+use async_trait::async_trait;
+use diesel::prelude::*;
+use diesel::r2d2::{ConnectionManager, Pool};
+use diesel::PgConnection;
+use chrono::Utc;
+
+use crate::domain::entities::account::{Account, UpdateAccountDto};
+use crate::domain::repositories::account_repository::AccountRepository;
+
+#[derive(Queryable)]
+struct AccountRecord {
+    id: i32,
+    user_id: i32,
+    first_name: Option<String>,
+    middle_name: Option<String>,
+    last_name: Option<String>,
+    avatar_300x300_url: String,
+    avatar_40x40_url: String,
+    created_at: chrono::NaiveDateTime,
+    updated_at: chrono::NaiveDateTime,
+}
+
+#[derive(Clone)]
+pub struct AccountRepositoryImpl {
+    pool: Pool<ConnectionManager<PgConnection>>,
+}
+
+impl AccountRepositoryImpl {
+    pub fn new(pool: Pool<ConnectionManager<PgConnection>>) -> Self {
+        Self { pool }
+    }
+}
+
+#[async_trait]
+impl AccountRepository for AccountRepositoryImpl {
+    async fn find_by_user_id(&self, user_id: i32) -> Result<Account, Box<dyn std::error::Error>> {
+        let conn = &mut self.pool.get()?;
+        let record = accounts::table
+            .filter(accounts::user_id.eq(user_id))
+            .first::<AccountRecord>(conn)?;
+
+        Ok(Account {
+            id: record.id,
+            user_id: record.user_id,
+            first_name: record.first_name,
+            middle_name: record.middle_name,
+            last_name: record.last_name,
+            avatar_300x300_url: record.avatar_300x300_url,
+            avatar_40x40_url: record.avatar_40x40_url,
+            created_at: record.created_at,
+            updated_at: record.updated_at,
+        })
+    }
+
+    // Implement the missing get_by_id method
+    async fn get_by_id(&self, user_id: i32) -> Result<Account, Box<dyn std::error::Error>> {
+        // Since we're using user_id as the identifier, we can reuse find_by_user_id
+        self.find_by_user_id(user_id).await
+    }
+
+    async fn update(&self, user_id: i32, account_dto: UpdateAccountDto) -> Result<Account, Box<dyn std::error::Error>> {
+        let conn = &mut self.pool.get()?;
+        let record = diesel::update(accounts::table)
+            .filter(accounts::user_id.eq(user_id))
+            .set((
+                accounts::first_name.eq(account_dto.first_name),
+                accounts::middle_name.eq(account_dto.middle_name),
+                accounts::last_name.eq(account_dto.last_name),
+                accounts::updated_at.eq(Utc::now().naive_utc()),
+            ))
+            .get_result::<AccountRecord>(conn)?;
+
+        Ok(Account {
+            id: record.id,
+            user_id: record.user_id,
+            first_name: record.first_name,
+            middle_name: record.middle_name,
+            last_name: record.last_name,
+            avatar_300x300_url: record.avatar_300x300_url,
+            avatar_40x40_url: record.avatar_40x40_url,
+            created_at: record.created_at,
+            updated_at: record.updated_at,
+        })
+    }
+
+    async fn update_avatar(&self, user_id: i32, new_avatar_300x300_url: String, new_avatar_40x40_url: String) -> Result<Account, Box<dyn std::error::Error>> {
+        let conn = &mut self.pool.get()?;
+        let record = diesel::update(accounts::table)
+            .filter(accounts::user_id.eq(user_id))
+            .set((
+                accounts::avatar_300x300_url.eq(new_avatar_300x300_url),
+                accounts::avatar_40x40_url.eq(new_avatar_40x40_url),
+                accounts::updated_at.eq(Utc::now().naive_utc()),
+            ))
+            .get_result::<AccountRecord>(conn)?;
+
+        Ok(Account {
+            id: record.id,
+            user_id: record.user_id,
+            first_name: record.first_name,
+            middle_name: record.middle_name,
+            last_name: record.last_name,
+            avatar_300x300_url: record.avatar_300x300_url,
+            avatar_40x40_url: record.avatar_40x40_url,
+            created_at: record.created_at,
+            updated_at: record.updated_at,
+        })
+    }
+}
+
+--> presentation/handlers/account_handlers.rs
+
+--> middleware/auth.rs
+
+use actix_web::error::ErrorUnauthorized;
+use actix_web::{Error, dev::ServiceRequest};
+use actix_web_httpauth::extractors::bearer::BearerAuth;
+use jsonwebtoken::{decode, DecodingKey, Validation};
+use crate::domain::entities::auth::Claims;
+
+#[allow(dead_code)]
+pub async fn validator(req: ServiceRequest, credentials: BearerAuth)
+                       -> Result<ServiceRequest, (Error, ServiceRequest)> {
+    let jwt_secret = std::env::var("JWT_SECRET").expect("JWT_SECRET must be set");
+    let token = credentials.token();
+
+    match decode::<Claims>(
+        token,
+        &DecodingKey::from_secret(jwt_secret.as_bytes()),
+        &Validation::default(),
+    ) {
+        Ok(_) => Ok(req),
+        Err(_) => Err((ErrorUnauthorized("Invalid token"), req)),
+    }
+}
+
+--> main.rs
+

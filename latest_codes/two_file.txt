@@ -1,0 +1,587 @@
+Use of an undeclared crate or module accounts
+
+--> infrastructure/repositories/account_repository.rs
+
+use crate::schema::accounts;
+use async_trait::async_trait;
+use diesel::prelude::*;
+use diesel::r2d2::{ConnectionManager, Pool};
+use diesel::PgConnection;
+use chrono::Utc;
+
+use crate::domain::entities::account::{Account, UpdateAccountDto};
+use crate::domain::repositories::account_repository::AccountRepository;
+
+
+#[derive(Queryable)]
+struct AccountRecord {
+    id: i32,
+    user_id: i32,
+    first_name: Option<String>,
+    middle_name: Option<String>,
+    last_name: Option<String>,
+    avatar_300x300_url: String,
+    avatar_40x40_url: String,
+    created_at: chrono::NaiveDateTime,
+    updated_at: chrono::NaiveDateTime,
+}
+
+pub struct AccountRepositoryImpl {
+    pool: Pool<ConnectionManager<PgConnection>>,
+}
+
+impl AccountRepositoryImpl {
+    pub fn new(pool: Pool<ConnectionManager<PgConnection>>) -> Self {
+        Self { pool }
+    }
+}
+
+#[async_trait]
+impl AccountRepository for AccountRepositoryImpl {
+    async fn find_by_user_id(&self, user_id: i32) -> Result<Account, Box<dyn std::error::Error>> {
+        let conn = &mut self.pool.get()?;
+        let record = accounts::table
+            .filter(accounts::user_id.eq(user_id))
+            .first::<AccountRecord>(conn)?;
+
+        Ok(Account {
+            id: record.id,
+            user_id: record.user_id,
+            first_name: record.first_name,
+            middle_name: record.middle_name,
+            last_name: record.last_name,
+            avatar_300x300_url: record.avatar_300x300_url,
+            avatar_40x40_url: record.avatar_40x40_url,
+            created_at: record.created_at,
+            updated_at: record.updated_at,
+        })
+    }
+
+    async fn update(&self, user_id: i32, account_dto: UpdateAccountDto) -> Result<Account, Box<dyn std::error::Error>> {
+        let conn = &mut self.pool.get()?;
+        let record = diesel::update(accounts::table)
+            .filter(accounts::user_id.eq(user_id))
+            .set((
+                accounts::first_name.eq(account_dto.first_name),
+                accounts::middle_name.eq(account_dto.middle_name),
+                accounts::last_name.eq(account_dto.last_name),
+                accounts::updated_at.eq(Utc::now().naive_utc()),
+            ))
+            .get_result::<AccountRecord>(conn)?;
+
+        Ok(Account {
+            id: record.id,
+            user_id: record.user_id,
+            first_name: record.first_name,
+            middle_name: record.middle_name,
+            last_name: record.last_name,
+            avatar_300x300_url: record.avatar_300x300_url,
+            avatar_40x40_url: record.avatar_40x40_url,
+            created_at: record.created_at,
+            updated_at: record.updated_at,
+        })
+    }
+
+    async fn update_avatar(&self, user_id: i32, new_avatar_300x300_url: String, new_avatar_40x40_url: String) -> Result<Account, Box<dyn std::error::Error>> {
+        let conn = &mut self.pool.get()?;
+        let record = diesel::update(accounts::table)
+            .filter(accounts::user_id.eq(user_id))
+            .set((
+                accounts::avatar_300x300_url.eq(new_avatar_300x300_url),
+                accounts::avatar_40x40_url.eq(new_avatar_40x40_url),
+                accounts::updated_at.eq(Utc::now().naive_utc()),
+            ))
+            .get_result::<AccountRecord>(conn)?;
+
+        Ok(Account {
+            id: record.id,
+            user_id: record.user_id,
+            first_name: record.first_name,
+            middle_name: record.middle_name,
+            last_name: record.last_name,
+            avatar_300x300_url: record.avatar_300x300_url,
+            avatar_40x40_url: record.avatar_40x40_url,
+            created_at: record.created_at,
+            updated_at: record.updated_at,
+        })
+    }
+}
+
+
+
+--> schema.rs
+
+// @generated automatically by Diesel CLI.
+
+diesel::table! {
+    accounts (id) {
+        id -> Int4,
+        user_id -> Int4,
+        first_name -> Nullable<Varchar>,
+        middle_name -> Nullable<Varchar>,
+        last_name -> Nullable<Varchar>,
+        avatar_300x300_url -> Varchar,
+        avatar_40x40_url -> Varchar,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
+    }
+}
+
+diesel::table! {
+    users (id) {
+        id -> Int4,
+        username -> Varchar,
+        password -> Varchar,
+        email -> Varchar,
+    }
+}
+
+diesel::joinable!(accounts -> users (user_id));
+
+diesel::allow_tables_to_appear_in_same_query!(
+    accounts,
+    users,
+);
+
+
+--> main.rs
+
+mod application;
+mod domain;
+mod infrastructure;
+mod presentation;
+mod schema;
+
+use actix_web::{web, App, HttpServer};
+use actix_web_httpauth::middleware::HttpAuthentication;
+use tracing::{debug, Level};
+use tracing_subscriber::FmtSubscriber;
+
+use infrastructure::{
+    config::database,
+    repositories::{
+        user_repository::UserRepositoryImpl,
+        auth_repository::AuthRepositoryImpl,
+        account_repository::AccountRepositoryImpl, // Add this
+    },
+};
+
+use application::use_cases::{
+    account_use_cases::{UpdateAccountUseCase, UploadAvatarUseCase},
+    user_use_cases::{GetUserByIdUseCase, CreateUserUseCase, ListUsersUseCase, DeleteUserUseCase, UpdateUserUseCase},
+    auth_use_cases::LoginUseCase,
+};
+
+use presentation::{
+    handlers::{
+        user_handlers::{UserHandlers, configure as user_configure},
+        auth_handlers::{AuthHandlers, configure as auth_configure},
+        account_handlers::{AccountHandlers, configure as account_configure}, // Add this
+    },
+    middleware::auth::validator,
+};
+
+#[actix_web::main]
+async fn main() -> std::io::Result<()> {
+    let _subscriber = FmtSubscriber::builder()
+        .with_max_level(Level::DEBUG)
+        .init();
+
+    debug!("Starting application...");
+
+    dotenvy::dotenv().ok();
+    let pool = database::establish_connection();
+
+    debug!("Database connection established");
+
+    let jwt_secret = std::env::var("JWT_SECRET").expect("JWT_SECRET must be set");
+
+    // Initialize repositories
+    let user_repository = UserRepositoryImpl::new(pool.clone());
+    let auth_repository = AuthRepositoryImpl::new(pool.clone());
+    let account_repository = AccountRepositoryImpl::new(pool.clone());
+
+    // Initialize use cases
+    let get_user_use_case = GetUserByIdUseCase::new(user_repository.clone());
+    let create_user_use_case = CreateUserUseCase::new(user_repository.clone());
+    let list_users_use_case = ListUsersUseCase::new(user_repository.clone());
+    let update_user_use_case = UpdateUserUseCase::new(user_repository.clone());
+    let delete_user_use_case = DeleteUserUseCase::new(user_repository);
+
+    let login_use_case = LoginUseCase::new(auth_repository, jwt_secret);
+
+    let update_account_use_case = UpdateAccountUseCase::new(account_repository.clone());
+    let upload_avatar_use_case = UploadAvatarUseCase::new(account_repository);
+
+    // Initialize handlers
+    let user_handlers = web::Data::new(UserHandlers::new(
+        get_user_use_case,
+        create_user_use_case,
+        list_users_use_case,
+        update_user_use_case,
+        delete_user_use_case,
+    ));
+
+    let auth_handlers = web::Data::new(AuthHandlers::new(login_use_case));
+
+    let account_handlers = web::Data::new(AccountHandlers::new(
+        update_account_use_case,
+        upload_avatar_use_case,
+    ));
+
+    let auth = HttpAuthentication::bearer(validator);
+
+    HttpServer::new(move || {
+        App::new()
+            .app_data(user_handlers.clone())
+            .app_data(auth_handlers.clone())
+            .app_data(account_handlers.clone())
+            .service(
+                web::scope("/api/v1")
+                    .configure(|cfg| auth_configure(cfg, auth_handlers.clone()))
+                    .service(
+                        web::scope("")
+                            .wrap(auth.clone())
+                            .configure(|cfg| user_configure(cfg, user_handlers.clone()))
+                            .configure(|cfg| account_configure(cfg, account_handlers.clone()))
+                    )
+            )
+    })
+        .bind(("127.0.0.1", 8080))?
+        .run()
+        .await
+}
+
+
+--> lib.rs
+
+pub mod application;
+pub mod domain;
+pub mod infrastructure;
+pub mod presentation;
+pub mod schema;
+
+--> application/use_cases/account_use_cases.rs
+
+use std::path::PathBuf;
+use uuid::Uuid;
+use image::{ImageFormat, imageops};
+use tokio::fs;
+use crate::domain::repositories::account_repository::AccountRepository;
+use crate::domain::entities::account::{Account, UpdateAccountDto, AvatarUploadResponse};
+
+pub struct UpdateAccountUseCase<T: AccountRepository> {
+    account_repository: T,
+}
+
+impl<T: AccountRepository> UpdateAccountUseCase<T> {
+    pub fn new(account_repository: T) -> Self {
+        Self { account_repository }
+    }
+
+    pub async fn execute(&self, user_id: i32, account_dto: UpdateAccountDto) -> Result<Account, Box<dyn std::error::Error>> {
+        self.account_repository.update(user_id, account_dto).await
+    }
+}
+
+pub struct UploadAvatarUseCase<T: AccountRepository> {
+    account_repository: T,
+    upload_dir: PathBuf,
+}
+
+impl<T: AccountRepository> UploadAvatarUseCase<T> {
+    pub fn new(account_repository: T, upload_dir: PathBuf) -> Self {
+        Self { account_repository, upload_dir }
+    }
+
+    pub async fn execute(&self, user_id: i32, image_data: Vec<u8>) -> Result<AvatarUploadResponse, Box<dyn std::error::Error>> {
+        // Create upload directory if it doesn't exist
+        fs::create_dir_all(&self.upload_dir).await?;
+
+        // Generate unique filename
+        let filename = format!("{}.avif", Uuid::new_v4());
+
+        // Process images
+        let img = image::load_from_memory(&image_data)?;
+
+        // Create 300x300 version
+        let large = imageops::resize(&img, 300, 300, imageops::FilterType::Lanczos3);
+        let large_path = self.upload_dir.join(format!("300_{}", &filename));
+        large.save_with_format(&large_path, ImageFormat::Avif)?;
+
+        // Create 40x40 version
+        let small = imageops::resize(&img, 40, 40, imageops::FilterType::Lanczos3);
+        let small_path = self.upload_dir.join(format!("40_{}", &filename));
+        small.save_with_format(&small_path, ImageFormat::Avif)?;
+
+        // Generate URLs
+        let large_url = format!("/uploads/300_{}", filename);
+        let small_url = format!("/uploads/40_{}", filename);
+
+        // Update database
+        self.account_repository.update_avatar(user_id, large_url.clone(), small_url.clone()).await?;
+
+        Ok(AvatarUploadResponse {
+            avatar_300x300_url: large_url,
+            avatar_40x40_url: small_url,
+            message: "Avatar uploaded successfully".to_string(),
+        })
+    }
+}
+
+
+
+--> domain/entities/account.rs
+
+use serde::{Deserialize, Serialize};
+use chrono::NaiveDateTime;
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Account {
+    pub id: i32,
+    pub user_id: i32,
+    pub first_name: Option<String>,
+    pub middle_name: Option<String>,
+    pub last_name: Option<String>,
+    pub avatar_300x300_url: String,
+    pub avatar_40x40_url: String,
+    pub created_at: NaiveDateTime,
+    pub updated_at: NaiveDateTime,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct UpdateAccountDto {
+    pub first_name: Option<String>,
+    pub middle_name: Option<String>,
+    pub last_name: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct AvatarUploadResponse {
+    pub avatar_300x300_url: String,
+    pub avatar_40x40_url: String,
+    pub message: String,
+}
+
+--> domain/repositories/account_repository.rs
+
+use async_trait::async_trait;
+use crate::domain::entities::account::{Account, UpdateAccountDto};
+
+#[async_trait]
+pub trait AccountRepository {
+    async fn find_by_user_id(&self, user_id: i32) -> Result<Account, Box<dyn std::error::Error>>;
+    async fn update(&self, user_id: i32, account: UpdateAccountDto) -> Result<Account, Box<dyn std::error::Error>>;
+    async fn update_avatar(&self, user_id: i32, avatar_300x300_url: String, avatar_40x40_url: String) -> Result<Account, Box<dyn std::error::Error>>;
+}
+
+--> infrastructure/config/database.rs
+
+use diesel::pg::PgConnection;
+use diesel::r2d2::{ConnectionManager, Pool};
+use dotenvy::dotenv;
+use std::env;
+
+pub type DbPool = Pool<ConnectionManager<PgConnection>>;
+
+pub fn establish_connection() -> DbPool {
+    dotenv().ok();
+    let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+    let manager = ConnectionManager::<PgConnection>::new(database_url);
+    Pool::builder()
+        .build(manager)
+        .expect("Failed to create pool")
+}
+
+--> infrastructure/repositories/account_repository.rs
+
+use crate::schema::accounts;
+use async_trait::async_trait;
+use diesel::prelude::*;
+use diesel::r2d2::{ConnectionManager, Pool};
+use diesel::PgConnection;
+use chrono::Utc;
+
+use crate::domain::entities::account::{Account, UpdateAccountDto};
+use crate::domain::repositories::account_repository::AccountRepository;
+
+
+#[derive(Queryable)]
+struct AccountRecord {
+    id: i32,
+    user_id: i32,
+    first_name: Option<String>,
+    middle_name: Option<String>,
+    last_name: Option<String>,
+    avatar_300x300_url: String,
+    avatar_40x40_url: String,
+    created_at: chrono::NaiveDateTime,
+    updated_at: chrono::NaiveDateTime,
+}
+
+pub struct AccountRepositoryImpl {
+    pool: Pool<ConnectionManager<PgConnection>>,
+}
+
+impl AccountRepositoryImpl {
+    pub fn new(pool: Pool<ConnectionManager<PgConnection>>) -> Self {
+        Self { pool }
+    }
+}
+
+#[async_trait]
+impl AccountRepository for AccountRepositoryImpl {
+    async fn find_by_user_id(&self, user_id: i32) -> Result<Account, Box<dyn std::error::Error>> {
+        let conn = &mut self.pool.get()?;
+        let record = accounts::table
+            .filter(accounts::user_id.eq(user_id))
+            .first::<AccountRecord>(conn)?;
+
+        Ok(Account {
+            id: record.id,
+            user_id: record.user_id,
+            first_name: record.first_name,
+            middle_name: record.middle_name,
+            last_name: record.last_name,
+            avatar_300x300_url: record.avatar_300x300_url,
+            avatar_40x40_url: record.avatar_40x40_url,
+            created_at: record.created_at,
+            updated_at: record.updated_at,
+        })
+    }
+
+    async fn update(&self, user_id: i32, account_dto: UpdateAccountDto) -> Result<Account, Box<dyn std::error::Error>> {
+        let conn = &mut self.pool.get()?;
+        let record = diesel::update(accounts::table)
+            .filter(accounts::user_id.eq(user_id))
+            .set((
+                accounts::first_name.eq(account_dto.first_name),
+                accounts::middle_name.eq(account_dto.middle_name),
+                accounts::last_name.eq(account_dto.last_name),
+                accounts::updated_at.eq(Utc::now().naive_utc()),
+            ))
+            .get_result::<AccountRecord>(conn)?;
+
+        Ok(Account {
+            id: record.id,
+            user_id: record.user_id,
+            first_name: record.first_name,
+            middle_name: record.middle_name,
+            last_name: record.last_name,
+            avatar_300x300_url: record.avatar_300x300_url,
+            avatar_40x40_url: record.avatar_40x40_url,
+            created_at: record.created_at,
+            updated_at: record.updated_at,
+        })
+    }
+
+    async fn update_avatar(&self, user_id: i32, new_avatar_300x300_url: String, new_avatar_40x40_url: String) -> Result<Account, Box<dyn std::error::Error>> {
+        let conn = &mut self.pool.get()?;
+        let record = diesel::update(accounts::table)
+            .filter(accounts::user_id.eq(user_id))
+            .set((
+                accounts::avatar_300x300_url.eq(new_avatar_300x300_url),
+                accounts::avatar_40x40_url.eq(new_avatar_40x40_url),
+                accounts::updated_at.eq(Utc::now().naive_utc()),
+            ))
+            .get_result::<AccountRecord>(conn)?;
+
+        Ok(Account {
+            id: record.id,
+            user_id: record.user_id,
+            first_name: record.first_name,
+            middle_name: record.middle_name,
+            last_name: record.last_name,
+            avatar_300x300_url: record.avatar_300x300_url,
+            avatar_40x40_url: record.avatar_40x40_url,
+            created_at: record.created_at,
+            updated_at: record.updated_at,
+        })
+    }
+}
+
+--> presentation/handlers/account_handlers.rs
+
+use actix_web::{web, HttpResponse, Responder};
+use actix_multipart::Multipart;
+use futures::{StreamExt, TryStreamExt};
+use crate::domain::repositories::account_repository::AccountRepository;
+use crate::application::use_cases::account_use_cases::{UpdateAccountUseCase, UploadAvatarUseCase};
+use crate::domain::entities::account::UpdateAccountDto;
+
+pub struct AccountHandlers<T: AccountRepository> {
+    update_account_use_case: UpdateAccountUseCase<T>,
+    upload_avatar_use_case: UploadAvatarUseCase<T>,
+}
+
+impl<T: AccountRepository> AccountHandlers<T> {
+    pub fn new(
+        update_account_use_case: UpdateAccountUseCase<T>,
+        upload_avatar_use_case: UploadAvatarUseCase<T>,
+    ) -> Self {
+        Self {
+            update_account_use_case,
+            upload_avatar_use_case,
+        }
+    }
+
+    pub async fn update_account(&self, user_id: web::Path<i32>, account_dto: web::Json<UpdateAccountDto>) -> impl Responder {
+        match self.update_account_use_case.execute(user_id.into_inner(), account_dto.into_inner()).await {
+            Ok(account) => HttpResponse::Ok().json(account),
+            Err(e) => HttpResponse::InternalServerError().json(serde_json::json!({
+                "error": "Failed to update account",
+                "message": e.to_string()
+            })),
+        }
+    }
+
+    pub async fn upload_avatar(&self, user_id: web::Path<i32>, mut payload: Multipart) -> impl Responder {
+        // Process multipart form data
+        while let Ok(Some(mut field)) = payload.try_next().await {
+            if field.name() == "avatar" {
+                let mut image_data = Vec::new();
+                while let Some(chunk) = field.next().await {
+                    match chunk {
+                        Ok(data) => image_data.extend_from_slice(&data),
+                        Err(e) => {
+                            return HttpResponse::BadRequest().json(serde_json::json!({
+                                "error": "Failed to process upload",
+                                "message": e.to_string()
+                            }));
+                        }
+                    }
+                }
+
+                return match self.upload_avatar_use_case.execute(user_id.into_inner(), image_data).await {
+                    Ok(response) => HttpResponse::Ok().json(response),
+                    Err(e) => {
+                        HttpResponse::InternalServerError().json(serde_json::json!({
+                            "error": "Failed to process avatar",
+                            "message": e.to_string()
+                        }))
+                    }
+                }
+            }
+        }
+
+        HttpResponse::BadRequest().json(serde_json::json!({
+            "error": "No avatar file provided",
+            "message": "Please provide an avatar file"
+        }))
+    }
+}
+
+pub fn configure<T: AccountRepository + 'static>(
+    cfg: &mut web::ServiceConfig,
+    _handlers: web::Data<AccountHandlers<T>>,
+) {
+    cfg.service(
+        web::scope("/account")
+            .route("/{id}", web::put().to(move |handlers: web::Data<AccountHandlers<T>>, id: web::Path<i32>, account_dto: web::Json<UpdateAccountDto>| async move {
+                handlers.update_account(id, account_dto).await
+            }))
+            .route("/{id}/avatar", web::post().to(move |handlers: web::Data<AccountHandlers<T>>, id: web::Path<i32>, payload: Multipart| async move {
+                handlers.upload_avatar(id, payload).await
+            })),
+    );
+}

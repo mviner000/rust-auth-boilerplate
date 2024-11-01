@@ -1,0 +1,16 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:latest
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: new_user       # Update to your new username
+      POSTGRES_PASSWORD: new_password # Update to your new password
+      POSTGRES_DB: new_database      # Update to your new database name
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:

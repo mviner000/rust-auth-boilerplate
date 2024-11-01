@@ -1,0 +1,819 @@
+analyze my file and folder structure.
+--> application/use_cases/auth_use_cases.rs
+
+```
+use std::fmt;
+use chrono::{Duration, Utc};
+use jsonwebtoken::{encode, EncodingKey, Header};
+
+use crate::domain::entities::auth::{AuthUser, Claims, TokenResponse};
+use crate::domain::repositories::auth_repository::AuthRepository;
+
+pub struct LoginUseCase<T: AuthRepository> {
+    auth_repository: T,
+    jwt_secret: String,
+}
+
+// Add custom Debug implementation
+impl<T: AuthRepository> fmt::Debug for LoginUseCase<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("LoginUseCase")
+            .field("auth_repository", &"AuthRepository")  // Don't expose internal details
+            .field("jwt_secret", &"[REDACTED]")  // Don't expose the secret
+            .finish()
+    }
+}
+
+
+impl<T: AuthRepository> LoginUseCase<T> {
+    pub fn new(auth_repository: T, jwt_secret: String) -> Self {
+        Self {
+            auth_repository,
+            jwt_secret,
+        }
+    }
+
+    pub async fn execute(&self, auth: AuthUser) -> Result<TokenResponse, Box<dyn std::error::Error>> {
+        let user = self.auth_repository.authenticate(auth).await?;
+
+        let now = Utc::now();
+        let exp = (now + Duration::hours(24)).timestamp();
+        let claims = Claims {
+            sub: user.id,
+            exp,
+            iat: now.timestamp(),
+        };
+
+        let token = encode(
+            &Header::default(),
+            &claims,
+            &EncodingKey::from_secret(self.jwt_secret.as_bytes()),
+        )?;
+
+        Ok(TokenResponse {
+            access_token: token,
+            token_type: "Bearer".to_string(),
+            expires_in: exp - now.timestamp(),
+        })
+    }
+}
+```
+
+--> application/use_cases/user_use_cases.rs
+
+```
+use std::fmt;
+use crate::domain::{
+    entities::user::{User, CreateUserDto},
+    repositories::user_repository::UserRepository,
+};
+use crate::domain::entities::user::UpdateUserDto;
+
+pub struct GetUserByIdUseCase<T: UserRepository> {
+    user_repository: T,
+}
+
+impl<T: UserRepository> fmt::Debug for GetUserByIdUseCase<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("GetUserByIdUseCase")
+            .field("user_repository", &"UserRepository")
+            .finish()
+    }
+}
+
+impl<T: UserRepository> GetUserByIdUseCase<T> {
+    pub fn new(user_repository: T) -> Self {
+        Self { user_repository }
+    }
+
+    pub async fn execute(&self, user_id: i32) -> Result<User, Box<dyn std::error::Error>> {
+        self.user_repository.find_by_id(user_id).await
+    }
+}
+
+pub struct CreateUserUseCase<T: UserRepository> {
+    user_repository: T,
+}
+
+impl<T: UserRepository> CreateUserUseCase<T> {
+    pub fn new(user_repository: T) -> Self {
+        Self { user_repository }
+    }
+
+    pub async fn execute(&self, user_dto: CreateUserDto) -> Result<User, Box<dyn std::error::Error>> {
+        self.user_repository.create(user_dto).await
+    }
+}
+
+
+pub struct ListUsersUseCase<T: UserRepository> {
+    user_repository: T,
+}
+
+impl<T: UserRepository> ListUsersUseCase<T> {
+    pub fn new(user_repository: T) -> Self {
+        Self { user_repository }
+    }
+
+    pub async fn execute(&self) -> Result<Vec<User>, Box<dyn std::error::Error>> {
+        self.user_repository.find_all().await
+    }
+}
+
+pub struct UpdateUserUseCase<T: UserRepository> {
+    user_repository: T,
+}
+
+impl<T: UserRepository> UpdateUserUseCase<T> {
+    pub fn new(user_repository: T) -> Self {
+        Self { user_repository }
+    }
+
+    pub async fn execute(&self, id: i32, user_dto: UpdateUserDto) -> Result<User, Box<dyn std::error::Error>> {
+        self.user_repository.update(id, user_dto).await
+    }
+}
+
+
+pub struct DeleteUserUseCase<T: UserRepository> {
+    user_repository: T,
+}
+
+impl<T: UserRepository> DeleteUserUseCase<T> {
+    pub fn new(user_repository: T) -> Self {
+        Self { user_repository }
+    }
+
+    pub async fn execute(&self, user_id: i32) -> Result<(), Box<dyn std::error::Error>> {
+        self.user_repository.delete(user_id).await
+    }
+}
+```
+
+--> bin/create_superuser.rs
+
+```
+use bcrypt::{hash, DEFAULT_COST};
+use diesel::prelude::*;
+use diesel::pg::PgConnection;
+use dotenvy::dotenv;
+use std::io::{self, Write};
+
+// Define the schema directly in this file
+table! {
+    users (id) {
+        id -> Int4,
+        username -> Varchar,
+        password -> Varchar,
+        email -> Varchar,
+    }
+}
+
+// Define a local User struct
+#[derive(Insertable)]
+#[diesel(table_name = users)]
+struct NewUser {
+    username: String,
+    email: String,
+    password: String,
+}
+
+fn main() {
+    dotenv().ok();
+
+    // Get database URL from environment
+    let database_url = std::env::var("DATABASE_URL")
+        .expect("DATABASE_URL must be set");
+
+    // Establish connection
+    let mut conn = PgConnection::establish(&database_url)
+        .expect("Error connecting to database");
+
+    // Get user input
+    let username = get_input("Enter username: ");
+    let email = get_input("Enter email: ");
+    let password = get_input("Enter password: ");
+
+    // Hash the password
+    let hashed_password = hash(password.as_bytes(), DEFAULT_COST)
+        .expect("Error hashing password");
+
+    // Create the user
+    let new_user = NewUser {
+        username,
+        email,
+        password: hashed_password,
+    };
+
+    // Insert the user into the database
+    diesel::insert_into(users::table)
+        .values(&new_user)
+        .execute(&mut conn)
+        .expect("Error creating superuser");
+
+    println!("Superuser created successfully!");
+}
+
+fn get_input(prompt: &str) -> String {
+    print!("{}", prompt);
+    io::stdout().flush().unwrap();
+
+    let mut input = String::new();
+    io::stdin().read_line(&mut input).unwrap();
+    input.trim().to_string()
+}
+```
+
+--> domain/entities/auth.rs
+
+```
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AuthUser {
+    pub username: String,
+    pub password: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Claims {
+    pub sub: i32,  // user_id
+    pub exp: i64,  // expiration time
+    pub iat: i64,  // issued at
+}
+
+#[derive(Debug, Serialize)]
+pub struct TokenResponse {
+    pub access_token: String,
+    pub token_type: String,
+    pub expires_in: i64,
+}
+```
+
+--> domain/entities/user.rs
+
+```
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct User {
+    pub id: i32,
+    pub username: String,
+    pub email: String,
+    pub password: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CreateUserDto {
+    pub username: String,
+    pub email: String,
+    pub password: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct UpdateUserDto {
+    pub username: String,
+    pub email: String,
+    pub password: String,
+}
+```
+
+--> domain/respositories/auth_repository.rs
+
+```
+use async_trait::async_trait;
+use crate::domain::entities::auth::AuthUser;
+use crate::domain::entities::user::User;
+
+#[async_trait]
+pub trait AuthRepository {
+    async fn authenticate(&self, auth: AuthUser) -> Result<User, Box<dyn std::error::Error>>;
+}
+```
+
+--> domain/respositories/auth_repository.rs
+
+```
+use async_trait::async_trait;
+use crate::domain::entities::user::{User, CreateUserDto, UpdateUserDto};
+
+#[async_trait]
+pub trait UserRepository {
+
+    async fn find_by_id(&self, user_id: i32) -> Result<User, Box<dyn std::error::Error>>;
+    async fn create(&self, user: CreateUserDto) -> Result<User, Box<dyn std::error::Error>>;
+    async fn find_all(&self) -> Result<Vec<User>, Box<dyn std::error::Error>>;
+
+    async fn update(&self, id: i32, user: UpdateUserDto) -> Result<User, Box<dyn std::error::Error>>;
+    async fn delete(&self, user_id: i32) -> Result<(), Box<dyn std::error::Error>>;
+}
+```
+
+--> infrastructure/config/database.rs
+
+```
+use diesel::pg::PgConnection;
+use diesel::r2d2::{ConnectionManager, Pool};
+use dotenvy::dotenv;
+use std::env;
+
+pub type DbPool = Pool<ConnectionManager<PgConnection>>;
+
+pub fn establish_connection() -> DbPool {
+    dotenv().ok();
+    let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+    let manager = ConnectionManager::<PgConnection>::new(database_url);
+    Pool::builder()
+        .build(manager)
+        .expect("Failed to create pool")
+}
+```
+
+--> infrastructure/repositories/auth_repository.rs
+
+```
+use async_trait::async_trait;
+use diesel::prelude::*;
+use diesel::r2d2::{ConnectionManager, Pool};
+use diesel::PgConnection;
+use tracing::debug;  // Add this import
+use bcrypt::verify;  // Remove DEFAULT_COST
+
+use crate::domain::entities::auth::AuthUser;
+use crate::domain::entities::user::User;
+use crate::domain::repositories::auth_repository::AuthRepository;
+use crate::infrastructure::repositories::user_repository::users;
+
+pub struct AuthRepositoryImpl {
+    pool: Pool<ConnectionManager<PgConnection>>,
+}
+
+impl AuthRepositoryImpl {
+
+    #[allow(dead_code)]
+    pub fn new(pool: Pool<ConnectionManager<PgConnection>>) -> Self {
+        Self { pool }
+    }
+}
+
+#[async_trait]
+impl AuthRepository for AuthRepositoryImpl {
+    async fn authenticate(&self, auth: AuthUser) -> Result<User, Box<dyn std::error::Error>> {
+        use self::users::dsl::*;
+
+        debug!("Attempting to authenticate user: {}", auth.username);
+
+        let conn = &mut self.pool.get()?;
+
+        // First find the user by username only
+        let user_result = users
+            .filter(username.eq(&auth.username))
+            .first::<(i32, String, String, String)>(conn);
+
+        match user_result {
+            Ok(user) => {
+                // Verify the password using bcrypt
+                if verify(&auth.password, &user.3)? {
+                    debug!("Password verified successfully");
+                    Ok(User {
+                        id: user.0,
+                        username: user.1,
+                        email: user.2,
+                        password: user.3,
+                    })
+                } else {
+                    debug!("Password verification failed");
+                    Err("Invalid password".into())
+                }
+            }
+            Err(e) => {
+                debug!("User not found: {}", e);
+                Err(Box::new(e))
+            }
+        }
+    }
+}
+```
+
+--> infrastructure/repositories/user_repository.rs
+
+```
+use async_trait::async_trait;
+use diesel::prelude::*;
+use diesel::r2d2::{ConnectionManager, Pool};
+use diesel::PgConnection;
+
+use crate::domain::{
+    entities::user::{User, CreateUserDto},
+    repositories::user_repository::UserRepository,
+};
+use crate::domain::entities::user::UpdateUserDto;
+
+#[derive(Clone)]
+pub struct UserRepositoryImpl {
+    pool: Pool<ConnectionManager<PgConnection>>,
+}
+
+impl UserRepositoryImpl {
+    pub fn new(pool: Pool<ConnectionManager<PgConnection>>) -> Self {
+        Self { pool }
+    }
+}
+
+table! {
+    users (id) {
+        id -> Int4,
+        username -> Varchar,
+        email -> Varchar,
+        password -> Varchar,
+    }
+}
+
+#[async_trait]
+impl UserRepository for UserRepositoryImpl {
+    async fn find_by_id(&self, user_id: i32) -> Result<User, Box<dyn std::error::Error>> {
+        use self::users::dsl::*;
+
+        let conn = &mut self.pool.get()?;
+        let user = users
+            .filter(id.eq(user_id))
+            .first::<(i32, String, String, String)>(conn)?;
+
+        Ok(User {
+            id: user.0,
+            username: user.1,
+            email: user.2,
+            password: user.3,
+        })
+    }
+
+    async fn create(&self, user_dto: CreateUserDto) -> Result<User, Box<dyn std::error::Error>> {
+        use self::users::dsl::*;
+
+        let conn = &mut self.pool.get()?;
+        let new_user = diesel::insert_into(users)
+            .values((
+                username.eq(&user_dto.username),
+                email.eq(&user_dto.email),
+                password.eq(&user_dto.password),
+            ))
+            .returning((id, username, email, password))
+            .get_result::<(i32, String, String, String)>(conn)?;
+
+        Ok(User {
+            id: new_user.0,
+            username: new_user.1,
+            email: new_user.2,
+            password: new_user.3,
+        })
+    }
+
+    async fn find_all(&self) -> Result<Vec<User>, Box<dyn std::error::Error>> {
+        use self::users::dsl::*;
+
+        let conn = &mut self.pool.get()?;
+        let results = users
+            .select((id, username, email, password))
+            .load::<(i32, String, String, String)>(conn)?;
+
+        Ok(results
+            .into_iter()
+            .map(|(user_id, user_username, user_email, user_password)| User {
+                id: user_id,
+                username: user_username,
+                email: user_email,
+                password: user_password,
+            })
+            .collect())
+    }
+
+    async fn update(&self, user_id: i32, user_dto: UpdateUserDto) -> Result<User, Box<dyn std::error::Error>> {
+        use self::users::dsl::*;
+
+        let conn = &mut self.pool.get()?;
+        let updated_user = diesel::update(users)
+            .filter(id.eq(user_id))
+            .set((
+                username.eq(&user_dto.username),
+                email.eq(&user_dto.email),
+                password.eq(&user_dto.password),
+            ))
+            .returning((id, username, email, password))
+            .get_result::<(i32, String, String, String)>(conn)?;
+
+        Ok(User {
+            id: updated_user.0,
+            username: updated_user.1,
+            email: updated_user.2,
+            password: updated_user.3,
+        })
+    }
+
+    async fn delete(&self, user_id: i32) -> Result<(), Box<dyn std::error::Error>> {
+        use self::users::dsl::*;
+
+        let conn = &mut self.pool.get()?;
+        diesel::delete(users)
+            .filter(id.eq(user_id))
+            .execute(conn)?;
+
+        Ok(())
+    }
+}
+```
+
+--> presentation/handlers/auth_handlers.rs
+
+```
+use actix_web::{web, HttpResponse, Responder};
+use serde_json::json;
+use crate::application::use_cases::auth_use_cases::LoginUseCase;
+use crate::domain::repositories::auth_repository::AuthRepository;
+use crate::domain::entities::auth::AuthUser;
+use tracing::debug;
+
+pub struct AuthHandlers<T: AuthRepository> {
+    login_use_case: LoginUseCase<T>,
+}
+
+#[allow(dead_code)]
+impl<T: AuthRepository> AuthHandlers<T> {
+    pub fn new(login_use_case: LoginUseCase<T>) -> Self {
+        Self { login_use_case }
+    }
+
+    pub async fn login(&self, auth: web::Json<AuthUser>) -> impl Responder {
+        let username = auth.username.clone();
+        debug!("Login attempt for user: {}", username);
+
+        match self.login_use_case.execute(auth.into_inner()).await {
+            Ok(token) => {
+                debug!("Login successful for user: {}", username);
+                HttpResponse::Ok().json(token)
+            }
+            Err(e) => {
+                debug!("Login failed: {}", e);
+                HttpResponse::Unauthorized().json(json!({
+                    "error": "Authentication failed",
+                    "message": e.to_string()
+                }))
+            }
+        }
+    }
+}
+
+#[allow(dead_code)]
+pub fn configure<T: AuthRepository + 'static>(
+    cfg: &mut web::ServiceConfig,
+    _handlers: web::Data<AuthHandlers<T>>,  // Removed underscore
+) {
+    cfg.service(
+        web::scope("/auth")
+            .route("/login", web::post().to(
+                |handlers: web::Data<AuthHandlers<T>>, auth: web::Json<AuthUser>| async move {
+                    handlers.login(auth).await
+                }
+            ))
+    );
+}
+```
+
+--> presentation/handlers/auth_handlers.rs
+
+```
+use actix_web::{web, HttpResponse, Responder};
+
+use crate::application::use_cases::user_use_cases::{CreateUserUseCase, ListUsersUseCase, GetUserByIdUseCase, UpdateUserUseCase, DeleteUserUseCase};
+use crate::domain::repositories::user_repository::UserRepository;
+use crate::domain::entities::user::{CreateUserDto, UpdateUserDto};
+
+pub struct UserHandlers<T: UserRepository> {
+    get_user_use_case: GetUserByIdUseCase<T>,
+    create_user_use_case: CreateUserUseCase<T>,
+    list_users_use_case: ListUsersUseCase<T>,
+    update_user_use_case: UpdateUserUseCase<T>,
+    delete_user_use_case: DeleteUserUseCase<T>,
+}
+
+impl<T: UserRepository> UserHandlers<T> {
+    pub fn new(
+        get_user_use_case: GetUserByIdUseCase<T>,
+        create_user_use_case: CreateUserUseCase<T>,
+        list_users_use_case: ListUsersUseCase<T>,
+        update_user_use_case: UpdateUserUseCase<T>,
+        delete_user_use_case: DeleteUserUseCase<T>,
+    ) -> Self {
+        Self {
+            get_user_use_case,
+            create_user_use_case,
+            list_users_use_case,
+            update_user_use_case,
+            delete_user_use_case,
+        }
+    }
+
+    pub async fn get_user(&self, user_id: web::Path<i32>) -> impl Responder {
+        match self.get_user_use_case.execute(user_id.into_inner()).await {
+            Ok(user) => HttpResponse::Ok().json(user),
+            Err(_) => HttpResponse::NotFound().finish(),
+        }
+    }
+
+    pub async fn create_user(&self, user_dto: web::Json<CreateUserDto>) -> impl Responder {
+        match self.create_user_use_case.execute(user_dto.into_inner()).await {
+            Ok(user) => HttpResponse::Created().json(user),
+            Err(_) => HttpResponse::InternalServerError().finish(),
+        }
+    }
+
+    pub async fn list_users(&self) -> impl Responder {
+        match self.list_users_use_case.execute().await {
+            Ok(users) => HttpResponse::Ok().json(users),
+            Err(_) => HttpResponse::InternalServerError().finish(),
+        }
+    }
+
+    pub async fn update_user(&self, user_id: web::Path<i32>, user_dto: web::Json<UpdateUserDto>) -> impl Responder {
+        match self.update_user_use_case.execute(user_id.into_inner(), user_dto.into_inner()).await {
+            Ok(user) => HttpResponse::Ok().json(user),
+            Err(_) => HttpResponse::NotFound().finish(),
+        }
+    }
+
+    pub async fn delete_user(&self, user_id: web::Path<i32>) -> impl Responder {
+        match self.delete_user_use_case.execute(user_id.into_inner()).await {
+            Ok(_) => HttpResponse::NoContent().finish(),
+            Err(_) => HttpResponse::NotFound().finish(),
+        }
+    }
+}
+
+pub fn configure<T: UserRepository + 'static>(
+    cfg: &mut web::ServiceConfig,
+    _handlers: web::Data<UserHandlers<T>>,
+) {
+    cfg.service(
+        web::scope("/user")
+            .route("", web::get().to(move |handlers: web::Data<UserHandlers<T>>| async move {
+                handlers.list_users().await
+            }))
+            .route("/{id}", web::get().to(move |handlers: web::Data<UserHandlers<T>>, id: web::Path<i32>| async move {
+                handlers.get_user(id).await
+            }))
+            .route("", web::post().to(move |handlers: web::Data<UserHandlers<T>>, user_dto: web::Json<CreateUserDto>| async move {
+                handlers.create_user(user_dto).await
+            }))
+            .route("/{id}", web::put().to(move |handlers: web::Data<UserHandlers<T>>, id: web::Path<i32>, user_dto: web::Json<UpdateUserDto>| async move {
+                handlers.update_user(id, user_dto).await
+            }))
+            .route("/{id}", web::delete().to(move |handlers: web::Data<UserHandlers<T>>, id: web::Path<i32>| async move {
+                handlers.delete_user(id).await
+            })),
+    );
+}
+```
+
+--> presentation/middleware/auth.rs
+
+```
+use actix_web::error::ErrorUnauthorized;
+use actix_web::{Error, dev::ServiceRequest};
+use actix_web_httpauth::extractors::bearer::BearerAuth;
+use jsonwebtoken::{decode, DecodingKey, Validation};
+use crate::domain::entities::auth::Claims;
+
+#[allow(dead_code)]
+pub async fn validator(req: ServiceRequest, credentials: BearerAuth)
+                       -> Result<ServiceRequest, (Error, ServiceRequest)> {
+    let jwt_secret = std::env::var("JWT_SECRET").expect("JWT_SECRET must be set");
+    let token = credentials.token();
+
+    match decode::<Claims>(
+        token,
+        &DecodingKey::from_secret(jwt_secret.as_bytes()),
+        &Validation::default(),
+    ) {
+        Ok(_) => Ok(req),
+        Err(_) => Err((ErrorUnauthorized("Invalid token"), req)),
+    }
+}
+```
+
+--> main.rs
+
+```
+mod application;
+mod domain;
+mod infrastructure;
+mod presentation;
+
+use actix_web::{web, App, HttpServer};
+use actix_web_httpauth::middleware::HttpAuthentication;
+use tracing::{debug, Level};
+use tracing_subscriber::FmtSubscriber;
+
+use infrastructure::{
+    config::database,
+    repositories::{
+        user_repository::UserRepositoryImpl,
+        auth_repository::AuthRepositoryImpl,
+    },
+};
+
+use application::use_cases::{
+    user_use_cases::{GetUserByIdUseCase, CreateUserUseCase, ListUsersUseCase, DeleteUserUseCase, UpdateUserUseCase},
+    auth_use_cases::LoginUseCase,
+};
+
+use presentation::{
+    handlers::{
+        user_handlers::{UserHandlers, configure as user_configure},
+        auth_handlers::{AuthHandlers, configure as auth_configure},
+    },
+    middleware::auth::validator,
+};
+
+#[actix_web::main]
+async fn main() -> std::io::Result<()> {
+    // Initialize logging
+    let _subscriber = FmtSubscriber::builder()
+        .with_max_level(Level::DEBUG)
+        .init();
+
+    debug!("Starting application...");
+
+    dotenvy::dotenv().ok();
+    let pool = database::establish_connection();
+
+    debug!("Database connection established");
+
+    let jwt_secret = std::env::var("JWT_SECRET").expect("JWT_SECRET must be set");
+
+    let user_repository = UserRepositoryImpl::new(pool.clone());
+    let auth_repository = AuthRepositoryImpl::new(pool);
+
+    let get_user_use_case = GetUserByIdUseCase::new(user_repository.clone());
+    let create_user_use_case = CreateUserUseCase::new(user_repository.clone());
+    let list_users_use_case = ListUsersUseCase::new(user_repository.clone());
+    let update_user_use_case = UpdateUserUseCase::new(user_repository.clone());
+    let delete_user_use_case = DeleteUserUseCase::new(user_repository);
+
+    let login_use_case = LoginUseCase::new(auth_repository, jwt_secret);
+
+    let user_handlers = web::Data::new(UserHandlers::new(
+        get_user_use_case,
+        create_user_use_case,
+        list_users_use_case,
+        update_user_use_case,
+        delete_user_use_case,
+    ));
+
+    let auth_handlers = web::Data::new(AuthHandlers::new(login_use_case));
+
+    let auth = HttpAuthentication::bearer(validator);
+
+    HttpServer::new(move || {
+        App::new()
+            .app_data(user_handlers.clone())
+            .app_data(auth_handlers.clone())
+            .service(
+                web::scope("/api/v1")
+                    // Configure auth routes WITHOUT authentication
+                    .configure(|cfg| auth_configure(cfg, auth_handlers.clone()))
+                    // Protected routes under /user with authentication
+                    .service(
+                        web::scope("")
+                            .wrap(auth.clone())
+                            .configure(|cfg| user_configure(cfg, user_handlers.clone()))
+                    )
+            )
+    })
+        .bind(("127.0.0.1", 8080))?
+        .run()
+        .await
+}
+```
+
+--> lib.rs
+
+```
+pub mod application;
+pub mod domain;
+pub mod infrastructure;
+pub mod presentation;
+```
+
+--> schema.rs
+
+```
+// @generated automatically by Diesel CLI.
+
+diesel::table! {
+    users (id) {
+        id -> Int4,
+        username -> Varchar,
+        password -> Varchar,
+        email -> Varchar,
+    }
+}
+```
