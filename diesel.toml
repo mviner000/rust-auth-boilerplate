@@ -6,4 +6,8 @@ file = "src/schema.rs"
 custom_type_derives = ["diesel::query_builder::QueryId", "Clone"]
 
 [migrations_directory]
+<<<<<<< HEAD
 dir = "/media/ssd-ubuntu/ntfs-drive/master-rust/new1/migrations"
+=======
+dir = "migrations"
+>>>>>>> cd01ba0 (first commit)
