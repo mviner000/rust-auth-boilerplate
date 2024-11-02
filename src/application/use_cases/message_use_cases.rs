@@ -1,6 +1,4 @@
-use async_trait::async_trait;
 use crate::domain::entities::message::DatabaseMessage;
-use crate::domain::entities::message::WebSocketMessage;
 use crate::domain::repositories::message_repository::MessageRepository;
 
 pub struct SendMessageUseCase<T: MessageRepository> {
