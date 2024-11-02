@@ -5,6 +5,8 @@ edition = "2021"
 
 [dependencies]
 actix-web = "4.4.0"
+actix = "0.13"
+actix-web-actors = "4.2"
 diesel = { version = "2.0.0", features = ["postgres", "r2d2", "chrono"] }
 dotenvy = "0.15"
 serde = { version = "1.0", features = ["derive"] }
@@ -22,12 +24,14 @@ futures = "0.3"
 actix-multipart = "0.6"
 actix-cors = "0.6"
 actix-files = "0.6"
-
 reqwest = { version = "0.11.14", features = ["multipart"] }
 tokio = { version = "1.41.0", features = ["macros", "rt-multi-thread"] }
 mockall = "0.11"
 webp = "0.2"
 rpassword = "7.3"
+tokio-stream = "0.1"
+log = "0.4.22"
+
 
 [[bin]]
 name = "create_superuser"

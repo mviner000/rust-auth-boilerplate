@@ -21,6 +21,7 @@ use infrastructure::{
         account_repository::AccountRepositoryImpl,
     },
 };
+use infrastructure::websocket::connection_manager::ConnectionManager;
 
 use crate::application::use_cases::{
     account_use_cases::{GetAccountUseCase, UpdateAccountUseCase, UploadAvatarUseCase},
@@ -36,6 +37,7 @@ use presentation::{
     },
     middleware::auth::validator,
 };
+use presentation::handlers::ws_handlers;
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
@@ -51,6 +53,8 @@ async fn main() -> std::io::Result<()> {
     info!("Database connection established");
 
     let secret_key = std::env::var("SECRET_KEY").expect("SECRET_KEY must be set");
+
+    let connection_manager = web::Data::new(ConnectionManager::new());
 
     // Create uploads directory if it doesn't exist
     let upload_dir = PathBuf::from("uploads");
@@ -101,7 +105,14 @@ async fn main() -> std::io::Result<()> {
 
     HttpServer::new(move || {
         let cors = Cors::default()
-            .send_wildcard()
+                .allowed_origin_fn(|origin, _req_head| {
+                    matches!(
+                origin.as_bytes(),
+                b"http://localhost:3000" |
+                b"http://192.168.100.7:3000" |
+                b"http://0.0.0.0:3000"
+            )
+            })
             .allowed_methods(vec!["GET", "POST", "PUT", "DELETE"])
             .allowed_headers(vec![
                 header::AUTHORIZATION,
@@ -116,6 +127,7 @@ async fn main() -> std::io::Result<()> {
             .app_data(user_handlers.clone())
             .app_data(auth_handlers.clone())
             .app_data(account_handlers.clone())
+            .app_data(connection_manager.clone())
             // Serve static files from uploads directory
             .service(Files::new("/uploads", "uploads").show_files_listing())
             .service(
@@ -128,8 +140,9 @@ async fn main() -> std::io::Result<()> {
                             .configure(|cfg| account_configure(cfg, account_handlers.clone()))
                     )
             )
+            .configure(ws_handlers::configure)
     })
-        .bind(("127.0.0.1", 8080))?
+        .bind(("0.0.0.0", 8080))?
         .run()
         .await
 }
