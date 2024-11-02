@@ -12,7 +12,7 @@ use actix_web_httpauth::middleware::HttpAuthentication;
 use tracing::{Level};
 use tracing_subscriber::FmtSubscriber;
 use std::path::PathBuf;
-
+use std::sync::Arc;
 use infrastructure::{
     config::database,
     repositories::{
@@ -21,7 +21,6 @@ use infrastructure::{
         account_repository::AccountRepositoryImpl,
     },
 };
-use infrastructure::websocket::connection_manager::ConnectionManager;
 
 use crate::application::use_cases::{
     account_use_cases::{GetAccountUseCase, UpdateAccountUseCase, UploadAvatarUseCase},
@@ -38,6 +37,12 @@ use presentation::{
     middleware::auth::validator,
 };
 use presentation::handlers::ws_handlers;
+use crate::application::use_cases::message_use_cases::{GetMessagesUseCase, SendMessageUseCase};
+use crate::infrastructure::repositories::message_repository::MessageRepositoryImpl;
+use crate::infrastructure::websocket::realtime_message_manager::RealtimeMessageManager;
+use crate::infrastructure::websocket::user_status_manager::UserStatusManager;
+use crate::presentation::handlers::message_handlers;
+use crate::presentation::handlers::message_handlers::MessageHandlers;
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
@@ -54,7 +59,9 @@ async fn main() -> std::io::Result<()> {
 
     let secret_key = std::env::var("SECRET_KEY").expect("SECRET_KEY must be set");
 
-    let connection_manager = web::Data::new(ConnectionManager::new());
+    // Initialize WebSocket managers
+    let user_status_manager = Arc::new(UserStatusManager::new());
+    let realtime_message_manager = RealtimeMessageManager::new(user_status_manager.clone());
 
     // Create uploads directory if it doesn't exist
     let upload_dir = PathBuf::from("uploads");
@@ -72,6 +79,10 @@ async fn main() -> std::io::Result<()> {
     let list_users_use_case = ListUsersUseCase::new(user_repository.clone());
     let update_user_use_case = UpdateUserUseCase::new(user_repository.clone());
     let delete_user_use_case = DeleteUserUseCase::new(user_repository);
+
+    let message_repository = MessageRepositoryImpl::new(pool.clone());
+    let send_message_use_case = SendMessageUseCase::new(message_repository.clone());
+    let get_messages_use_case = GetMessagesUseCase::new(message_repository);
 
     let login_use_case = LoginUseCase::new(auth_repository.clone());
     let register_use_case = RegisterUseCase::new(auth_repository);
@@ -101,17 +112,26 @@ async fn main() -> std::io::Result<()> {
         upload_avatar_use_case,
     ));
 
+    let message_handlers = web::Data::new(MessageHandlers::new(
+        send_message_use_case,
+        get_messages_use_case,
+        realtime_message_manager.clone(),
+    ));
+
     let auth = HttpAuthentication::bearer(validator);
+
+    let user_status_manager_data = web::Data::new(user_status_manager);
+    let realtime_message_manager_data = web::Data::new(realtime_message_manager);
 
     HttpServer::new(move || {
         let cors = Cors::default()
-                .allowed_origin_fn(|origin, _req_head| {
-                    matches!(
-                origin.as_bytes(),
-                b"http://localhost:3000" |
-                b"http://192.168.100.7:3000" |
-                b"http://0.0.0.0:3000"
-            )
+            .allowed_origin_fn(|origin, _req_head| {
+                matches!(
+                    origin.as_bytes(),
+                    b"http://localhost:3000" |
+                    b"http://192.168.100.7:3000" |
+                    b"http://0.0.0.0:3000"
+                )
             })
             .allowed_methods(vec!["GET", "POST", "PUT", "DELETE"])
             .allowed_headers(vec![
@@ -127,8 +147,10 @@ async fn main() -> std::io::Result<()> {
             .app_data(user_handlers.clone())
             .app_data(auth_handlers.clone())
             .app_data(account_handlers.clone())
-            .app_data(connection_manager.clone())
-            // Serve static files from uploads directory
+            .app_data(user_status_manager_data.clone())
+            .app_data(realtime_message_manager_data.clone())
+            // Add WebSocket routes before the API routes
+            .configure(ws_handlers::configure)  // Add this line
             .service(Files::new("/uploads", "uploads").show_files_listing())
             .service(
                 web::scope("/api/v1")
@@ -138,9 +160,9 @@ async fn main() -> std::io::Result<()> {
                             .wrap(auth.clone())
                             .configure(|cfg| user_configure(cfg, user_handlers.clone()))
                             .configure(|cfg| account_configure(cfg, account_handlers.clone()))
+                            .configure(|cfg| message_handlers::configure(cfg, message_handlers.clone()))
                     )
             )
-            .configure(ws_handlers::configure)
     })
         .bind(("0.0.0.0", 8080))?
         .run()
