@@ -1,8 +1,10 @@
 use serde::{Deserialize, Serialize};
 use chrono::NaiveDateTime;
-use actix::prelude::*;
+use diesel::prelude::*;
+use crate::schema::messages;
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, Queryable, Insertable)]
+#[diesel(table_name = messages)]
 pub struct DatabaseMessage {
     pub id: i32,
     pub sender_id: i32,

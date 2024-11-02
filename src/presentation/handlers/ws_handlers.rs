@@ -91,23 +91,39 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WebSocketActor {
                             },
                             WebSocketMessage::CallOffer { to_user_id, sdp } => {
                                 let realtime_manager = Arc::clone(&self.realtime_message_manager);
-                                let from_user_id = self.user_id;
-                                // Handle WebRTC offer
+                                actix::spawn(async move {
+                                    // Implement WebRTC offer handling here
+                                    // For now, use _ prefix to indicate intentionally unused variables
+                                    let _to_user_id = to_user_id;
+                                    let _sdp = sdp;
+                                    let _manager = realtime_manager;
+                                });
                             },
                             WebSocketMessage::CallAnswer { to_user_id, sdp } => {
                                 let realtime_manager = Arc::clone(&self.realtime_message_manager);
-                                let from_user_id = self.user_id;
-                                // Handle WebRTC answer
+                                actix::spawn(async move {
+                                    // Implement WebRTC answer handling here
+                                    let _to_user_id = to_user_id;
+                                    let _sdp = sdp;
+                                    let _manager = realtime_manager;
+                                });
                             },
                             WebSocketMessage::IceCandidate { to_user_id, candidate } => {
                                 let realtime_manager = Arc::clone(&self.realtime_message_manager);
-                                let from_user_id = self.user_id;
-                                // Handle ICE candidate
+                                actix::spawn(async move {
+                                    // Implement ICE candidate handling here
+                                    let _to_user_id = to_user_id;
+                                    let _candidate = candidate;
+                                    let _manager = realtime_manager;
+                                });
                             },
                             WebSocketMessage::EndCall { to_user_id } => {
                                 let realtime_manager = Arc::clone(&self.realtime_message_manager);
-                                let from_user_id = self.user_id;
-                                // Handle call end
+                                actix::spawn(async move {
+                                    // Implement call end handling here
+                                    let _to_user_id = to_user_id;
+                                    let _manager = realtime_manager;
+                                });
                             },
                             WebSocketMessage::Status { .. } | WebSocketMessage::Error { .. } => {
                                 ctx.text(serde_json::json!({

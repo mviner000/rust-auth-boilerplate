@@ -61,7 +61,7 @@ impl<T: MessageRepository> MessageHandlers<T> {
 // Add configuration function for routes
 pub fn configure<T: MessageRepository + 'static>(
     cfg: &mut web::ServiceConfig,
-    handlers: web::Data<MessageHandlers<T>>,
+    _handlers: web::Data<MessageHandlers<T>>,
 ) {
     cfg.service(
         web::scope("/messages")

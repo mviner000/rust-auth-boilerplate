@@ -1,7 +1,5 @@
 use std::sync::Arc;
-use actix::Addr;
 use crate::infrastructure::websocket::user_status_manager::UserStatusManager;
-use crate::presentation::handlers::ws_handlers::WebSocketActor;
 use crate::domain::entities::message::WebSocketMessage;
 
 #[derive(Clone)]
@@ -16,7 +14,7 @@ impl RealtimeMessageManager {
         }
     }
 
-    pub async fn send_message(&self, from_user_id: i32, to_user_id: i32, content: String) -> Result<(), String> {
+    pub async fn send_message(&self, _from_user_id: i32, to_user_id: i32, content: String) -> Result<(), String> {
         if let Some(addr) = self.user_status_manager.get_connection(to_user_id).await {
             let message = WebSocketMessage::Chat {
                 to_user_id,
