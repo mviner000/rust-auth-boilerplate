@@ -15,6 +15,17 @@ diesel::table! {
 }
 
 diesel::table! {
+    messages (id) {
+        id -> Int4,
+        sender_id -> Int4,
+        receiver_id -> Int4,
+        content -> Text,
+        is_read -> Bool,
+        created_at -> Timestamp,
+    }
+}
+
+diesel::table! {
     roles (id) {
         id -> Int4,
         #[max_length = 50]
@@ -50,6 +61,7 @@ diesel::joinable!(user_roles -> users (user_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
     accounts,
+    messages,
     roles,
     user_roles,
     users,
