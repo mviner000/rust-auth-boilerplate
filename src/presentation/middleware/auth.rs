@@ -1,5 +1,5 @@
 use actix_web::error::ErrorUnauthorized;
-use actix_web::{Error, dev::ServiceRequest};
+use actix_web::{Error, dev::ServiceRequest, HttpMessage};
 use actix_web_httpauth::extractors::bearer::BearerAuth;
 use jsonwebtoken::{decode, DecodingKey, Validation};
 use crate::domain::entities::auth::Claims;
@@ -15,7 +15,11 @@ pub async fn validator(req: ServiceRequest, credentials: BearerAuth)
         &DecodingKey::from_secret(secret_key.as_bytes()),
         &Validation::default(),
     ) {
-        Ok(_) => Ok(req),
+        Ok(token_data) => {
+            // Add claims to request extensions for use in handlers
+            req.extensions_mut().insert(token_data.claims);
+            Ok(req)
+        },
         Err(_) => Err((ErrorUnauthorized("Invalid token"), req)),
     }
 }

@@ -6,7 +6,7 @@ pub struct AuthUser {
     pub password: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Claims {
     pub sub: i32,  // user_id
     pub exp: i64,  // expiration time

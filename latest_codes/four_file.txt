@@ -1,0 +1,1061 @@
+im switching to rust, let's revert.
+
+what is needed now by my frontend to return the logged-in user's profile.
+
+--> nextjs/api/profile/route.ts
+
+import { env } from "@/env";
+
+import { getToken } from "@/lib/token";
+
+import { NextRequest, NextResponse } from "next/server";
+
+const RUST_API_PROFILE_URL = ${env.NEXT_PUBLIC_API_URL!}/profile
+
+export async function GET(request: NextRequest): Promise<NextResponse> {
+
+const authToken = getToken();
+
+if (!authToken) {
+
+return NextResponse.json({}, { status: 401 });
+
+ }
+
+const options = {
+
+method: "GET",
+
+headers: {
+
+'Content-Type': 'application/json',
+
+'Accept': 'application/json',
+
+'Authorization': Bearer ${authToken}
+
+ },
+
+ }
+
+const response = await fetch(RUST_API_PROFILE_URL, options)
+
+const result = await response.json()
+
+let status = 200
+
+if(!response.ok){
+
+status = 401
+
+// return NextResponse.json({...result}, { status: 401 });
+
+ }
+
+return NextResponse.json({...result}, { status: status });
+
+}
+
+--> utils/getCurrentUser.ts
+
+import { env } from "@/env";
+
+import fetcher from "@/lib/fetcher";
+
+import { getToken } from "@/lib/token";
+
+import { redirect } from "next/navigation";
+
+import { cache } from "react";
+
+const RUST_API_PROFILE_URL = ${env.NEXT_PUBLIC_API_URL!}/profile;
+
+export type CurrentUser = {
+
+username: string;
+
+email: string;
+
+};
+
+const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
+
+const token = getToken();
+
+if (!token) return null;
+
+const options = {
+
+method: "GET",
+
+headers: {
+
+"Content-Type": "application/json",
+
+Accept: "application/json",
+
+Authorization: Bearer ${token},
+
+ },
+
+ };
+
+const response = await fetch(RUST_API_PROFILE_URL, options);
+
+return await response.json();
+
+});
+
+export default getCurrentUser;
+
+--> utils/useFetchUser.ts
+
+import useSWR from "swr";
+
+import { useAuth } from "@/providers/authProviders";
+
+import useCheckAuth from "@/hooks/useCheckAuth";
+
+import { useEffect } from "react";
+
+// Custom error class for handling fetch errors
+
+class FetchError extends Error {
+
+info: any;
+
+status: number;
+
+constructor(message: string, info: any, status: number) {
+
+super(message);
+
+this.info = info;
+
+this.status = status;
+
+ }
+
+}
+
+// Fetcher function to get data from the API
+
+const fetcher = async (url: string): Promise<any> => {
+
+const res: Response = await fetch(url);
+
+if (!res.ok) {
+
+const error = new FetchError(
+
+"An error occurred while fetching the data.",
+
+await res.json(),
+
+res.status
+
+ );
+
+throw error;
+
+ }
+
+return res.json();
+
+};
+
+// API URL for fetching profile data
+
+const PROFILE_API_URL = "/api/profile";
+
+export const useFetchUser = () => {
+
+const isAuthenticated = useCheckAuth(); // Check if the user is authenticated
+
+const auth = useAuth();
+
+// Don't fetch data if the user is not authenticated
+
+const { data, error, isLoading } = useSWR(
+
+isAuthenticated ? PROFILE_API_URL : null,
+
+fetcher
+
+ );
+
+useEffect(() => {
+
+if (error?.status === 401) {
+
+auth.loginRequiredRedirect();
+
+ }
+
+ }, [auth, error]);
+
+return { data, error, isLoading };
+
+};
+
+--> lib/fetcher.ts
+
+class FetchError extends Error {
+
+ info: any;
+
+status: number;
+
+constructor(message: string, info: any, status: number) {
+
+super(message);
+
+this.info = info;
+
+this.status = status;
+
+ }
+
+}
+
+const fetcher = async (url: string): Promise<any> => {
+
+const res: Response = await fetch(url);
+
+// If the status code is not in the range 200-299,
+
+// we still try to parse and throw it.
+
+if (!res.ok) {
+
+const error = new FetchError(
+
+"An error occurred while fetching the data.",
+
+await res.json(),
+
+res.status
+
+ );
+
+throw error;
+
+ }
+
+return res.json();
+
+};
+
+export default fetcher;
+
+--> lib/token.ts
+
+import { cookies } from "next/headers";
+
+const TOKEN_AGE = 16200; // 4.5 hours in seconds
+
+const TOKEN_NAME = "auth-token";
+
+const TOKEN_REFRESH_NAME = "auth-refresh-token";
+
+export async function getToken(): Promise<string | undefined> {
+
+const cookieStore = await cookies();
+
+const myAuthToken = cookieStore.get(TOKEN_NAME);
+
+return myAuthToken?.value;
+
+}
+
+export async function getRefresToken(): Promise<string | undefined> {
+
+const cookieStore = await cookies();
+
+const myAuthToken = cookieStore.get(TOKEN_REFRESH_NAME);
+
+return myAuthToken?.value;
+
+}
+
+export async function setToken(authToken: string): Promise<void> {
+
+const cookieStore = await cookies();
+
+cookieStore.set({
+
+name: TOKEN_NAME,
+
+value: authToken,
+
+httpOnly: true,
+
+sameSite: 'strict',
+
+secure: process.env.NODE_ENV !== 'development',
+
+maxAge: TOKEN_AGE,
+
+ });
+
+}
+
+export async function refreshToken(authRefreshToken: string): Promise<void> {
+
+const cookieStore = await cookies();
+
+cookieStore.set({
+
+name: TOKEN_REFRESH_NAME,
+
+value: authRefreshToken,
+
+httpOnly: true,
+
+sameSite: 'strict',
+
+secure: process.env.NODE_ENV !== 'development',
+
+maxAge: TOKEN_AGE,
+
+ });
+
+}
+
+export async function deleteToken(): Promise<void> {
+
+const cookieStore = await cookies();
+
+cookieStore.delete(TOKEN_REFRESH_NAME);
+
+cookieStore.delete(TOKEN_NAME);
+
+}
+
+--> lib/utils.ts
+
+import { clsx, type ClassValue } from "clsx"
+
+import { twMerge } from "tailwind-merge"
+
+export function cn(...inputs: ClassValue[]) {
+
+return twMerge(clsx(inputs))
+
+}
+
+--> page.tsx
+
+import getCurrentUser from "@/utils/getCurrentUser";
+
+import { redirect } from "next/navigation";
+
+export default async function Home() {
+
+const user = await getCurrentUser();
+
+if (!user) redirect("/login");
+
+return (
+
+<>
+
+ Logged In User
+
+</>
+
+ );
+
+}
+
+--> hooks/useCheckAuth.tsx
+
+"use client";
+
+import fetcher from "@/lib/fetcher";
+
+import { useAuth } from "@/providers/authProviders";
+
+import React, { useEffect, useState } from "react";
+
+import useSWR from "swr";
+
+const TOKEN_API_URL = "/api/check-token";
+
+const useCheckAuth = () => {
+
+const [hasToken, setHasToken] = useState<boolean | null>(null);
+
+const { data, error } = useSWR(TOKEN_API_URL, fetcher);
+
+// Call the callback function with the result when data is available
+
+useEffect(() => {
+
+if (data) {
+
+setHasToken(!!data?.token);
+
+ }
+
+ }, [data, setHasToken]);
+
+return hasToken;
+
+};
+
+export default useCheckAuth;
+
+--> layout.tsx
+
+import type { Metadata } from "next";
+
+import localFont from "next/font/local";
+
+import "./globals.css";
+
+import { AuthProvider } from "@/providers/authProviders";
+
+const geistSans = localFont({
+
+src: "./fonts/GeistVF.woff",
+
+variable: "--font-geist-sans",
+
+weight: "100 900",
+
+});
+
+const geistMono = localFont({
+
+src: "./fonts/GeistMonoVF.woff",
+
+variable: "--font-geist-mono",
+
+weight: "100 900",
+
+});
+
+export const metadata: Metadata = {
+
+title: "Create Next App",
+
+description: "Generated by create next app",
+
+};
+
+export default function RootLayout({
+
+children,
+
+}: Readonly<{
+
+children: React.ReactNode;
+
+}>) {
+
+return (
+
+<html lang="en" suppressHydrationWarning>
+
+<body
+
+className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+
+>
+
+<AuthProvider>
+
+{children}
+
+</AuthProvider>
+
+</body>
+
+</html>
+
+ );
+
+}
+
+--> backend:
+
+application/auth_use_cases.rs
+
+use std::fmt;
+use chrono::{Duration, Utc};
+use jsonwebtoken::{encode, EncodingKey, Header};
+
+use crate::domain::entities::auth::{AuthUser, Claims, RegisterUserDto, TokenResponse};
+use crate::domain::entities::user::User;
+use crate::domain::repositories::auth_repository::AuthRepository;
+
+pub struct LoginUseCase<T: AuthRepository> {
+    auth_repository: T,
+}
+
+impl<T: AuthRepository> fmt::Debug for LoginUseCase<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("LoginUseCase")
+            .field("auth_repository", &"AuthRepository")
+            .finish()
+    }
+}
+
+impl<T: AuthRepository> LoginUseCase<T> {
+    pub fn new(auth_repository: T) -> Self {
+        Self {
+            auth_repository,
+        }
+    }
+
+    pub async fn execute(&self, auth: AuthUser) -> Result<TokenResponse, Box<dyn std::error::Error + Send + Sync>> {
+        let user = self.auth_repository.authenticate(auth).await?;
+
+        let secret_key = std::env::var("SECRET_KEY").expect("SECRET_KEY must be set");
+        let now = Utc::now();
+        let exp = (now + Duration::hours(24)).timestamp();
+        let claims = Claims {
+            sub: user.id,
+            exp,
+            iat: now.timestamp(),
+        };
+
+        let token = encode(
+            &Header::default(),
+            &claims,
+            &EncodingKey::from_secret(secret_key.as_bytes()),
+        )?;
+
+        Ok(TokenResponse {
+            access_token: token,
+            token_type: "Bearer".to_string(),
+            expires_in: exp - now.timestamp(),
+        })
+    }
+}
+
+pub struct RegisterUseCase<T: AuthRepository> {
+    auth_repository: T,
+}
+
+impl<T: AuthRepository> RegisterUseCase<T> {
+    pub fn new(auth_repository: T) -> Self {
+        Self { auth_repository }
+    }
+
+    pub async fn execute(&self, register_dto: RegisterUserDto) -> Result<User, Box<dyn std::error::Error + Send + Sync>> {
+        self.auth_repository.register(register_dto).await
+    }
+}
+
+--> application/user_use_cases.rs
+
+use std::fmt;
+use crate::domain::{
+    entities::user::{User, CreateUserDto},
+    repositories::user_repository::UserRepository,
+};
+use crate::domain::entities::user::UpdateUserDto;
+
+pub struct GetUserByIdUseCase<T: UserRepository> {
+    user_repository: T,
+}
+
+impl<T: UserRepository> fmt::Debug for GetUserByIdUseCase<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("GetUserByIdUseCase")
+            .field("user_repository", &"UserRepository")
+            .finish()
+    }
+}
+
+impl<T: UserRepository> GetUserByIdUseCase<T> {
+    pub fn new(user_repository: T) -> Self {
+        Self { user_repository }
+    }
+
+    pub async fn execute(&self, user_id: i32) -> Result<User, Box<dyn std::error::Error>> {
+        self.user_repository.find_by_id(user_id).await
+    }
+}
+
+pub struct CreateUserUseCase<T: UserRepository> {
+    user_repository: T,
+}
+
+impl<T: UserRepository> CreateUserUseCase<T> {
+    pub fn new(user_repository: T) -> Self {
+        Self { user_repository }
+    }
+
+    pub async fn execute(&self, user_dto: CreateUserDto) -> Result<User, Box<dyn std::error::Error>> {
+        self.user_repository.create(user_dto).await
+    }
+}
+
+
+pub struct ListUsersUseCase<T: UserRepository> {
+    user_repository: T,
+}
+
+impl<T: UserRepository> ListUsersUseCase<T> {
+    pub fn new(user_repository: T) -> Self {
+        Self { user_repository }
+    }
+
+    pub async fn execute(&self) -> Result<Vec<User>, Box<dyn std::error::Error>> {
+        self.user_repository.find_all().await
+    }
+}
+
+pub struct UpdateUserUseCase<T: UserRepository> {
+    user_repository: T,
+}
+
+impl<T: UserRepository> UpdateUserUseCase<T> {
+    pub fn new(user_repository: T) -> Self {
+        Self { user_repository }
+    }
+
+    pub async fn execute(&self, id: i32, user_dto: UpdateUserDto) -> Result<User, Box<dyn std::error::Error>> {
+        self.user_repository.update(id, user_dto).await
+    }
+}
+
+
+pub struct DeleteUserUseCase<T: UserRepository> {
+    user_repository: T,
+}
+
+impl<T: UserRepository> DeleteUserUseCase<T> {
+    pub fn new(user_repository: T) -> Self {
+        Self { user_repository }
+    }
+
+    pub async fn execute(&self, user_id: i32) -> Result<(), Box<dyn std::error::Error>> {
+        self.user_repository.delete(user_id).await
+    }
+}
+
+--> domain/entities/auth.rs
+
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AuthUser {
+    pub username: String,
+    pub password: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Claims {
+    pub sub: i32,  // user_id
+    pub exp: i64,  // expiration time
+    pub iat: i64,  // issued at
+}
+
+#[derive(Debug, Serialize)]
+pub struct TokenResponse {
+    pub access_token: String,
+    pub token_type: String,
+    pub expires_in: i64,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct RegisterUserDto {
+    pub username: String,
+    pub email: String,
+    pub password: String,
+    pub first_name: Option<String>,
+    pub middle_name: Option<String>,
+    pub last_name: Option<String>,
+}
+
+--> domain/entities/user.rs
+
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct User {
+    pub id: i32,
+    pub username: String,
+    pub email: String,
+    pub password: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CreateUserDto {
+    pub username: String,
+    pub email: String,
+    pub password: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct UpdateUserDto {
+    pub username: String,
+    pub email: String,
+    pub password: String,
+}
+
+--> domain/repositories/auth_repository.rs
+
+use async_trait::async_trait;
+use crate::domain::entities::{
+    auth::{AuthUser, RegisterUserDto},
+    user::User,
+};
+
+#[async_trait]
+pub trait AuthRepository {
+    async fn authenticate(&self, auth: AuthUser) -> Result<User, Box<dyn std::error::Error + Send + Sync>>;
+    async fn register(&self, register_dto: RegisterUserDto) -> Result<User, Box<dyn std::error::Error + Send + Sync>>;
+}
+
+--> domain/repositories/user_repository.rs
+
+use async_trait::async_trait;
+use crate::domain::entities::user::{User, CreateUserDto, UpdateUserDto};
+
+#[async_trait]
+pub trait UserRepository {
+
+    async fn find_by_id(&self, user_id: i32) -> Result<User, Box<dyn std::error::Error>>;
+    async fn create(&self, user: CreateUserDto) -> Result<User, Box<dyn std::error::Error>>;
+    async fn find_all(&self) -> Result<Vec<User>, Box<dyn std::error::Error>>;
+
+    async fn update(&self, id: i32, user: UpdateUserDto) -> Result<User, Box<dyn std::error::Error>>;
+    async fn delete(&self, user_id: i32) -> Result<(), Box<dyn std::error::Error>>;
+}
+
+--> infrastructure/repositories/auth_repository.rs
+
+--> infrastructure/repositories/user_repository.rs
+
+use async_trait::async_trait;
+use diesel::prelude::*;
+use diesel::r2d2::{ConnectionManager, Pool};
+use diesel::PgConnection;
+
+use crate::domain::{
+    entities::user::{User, CreateUserDto},
+    repositories::user_repository::UserRepository,
+};
+use crate::domain::entities::user::UpdateUserDto;
+
+#[derive(Clone)]
+pub struct UserRepositoryImpl {
+    pool: Pool<ConnectionManager<PgConnection>>,
+}
+
+impl UserRepositoryImpl {
+    pub fn new(pool: Pool<ConnectionManager<PgConnection>>) -> Self {
+        Self { pool }
+    }
+}
+
+table! {
+    users (id) {
+        id -> Int4,
+        username -> Varchar,
+        email -> Varchar,
+        password -> Varchar,
+    }
+}
+
+#[async_trait]
+impl UserRepository for UserRepositoryImpl {
+    async fn find_by_id(&self, user_id: i32) -> Result<User, Box<dyn std::error::Error>> {
+        use self::users::dsl::*;
+
+        let conn = &mut self.pool.get()?;
+        let user = users
+            .filter(id.eq(user_id))
+            .first::<(i32, String, String, String)>(conn)?;
+
+        Ok(User {
+            id: user.0,
+            username: user.1,
+            email: user.2,
+            password: user.3,
+        })
+    }
+
+    async fn create(&self, user_dto: CreateUserDto) -> Result<User, Box<dyn std::error::Error>> {
+        use self::users::dsl::*;
+
+        let conn = &mut self.pool.get()?;
+        let new_user = diesel::insert_into(users)
+            .values((
+                username.eq(&user_dto.username),
+                email.eq(&user_dto.email),
+                password.eq(&user_dto.password),
+            ))
+            .returning((id, username, email, password))
+            .get_result::<(i32, String, String, String)>(conn)?;
+
+        Ok(User {
+            id: new_user.0,
+            username: new_user.1,
+            email: new_user.2,
+            password: new_user.3,
+        })
+    }
+
+    async fn find_all(&self) -> Result<Vec<User>, Box<dyn std::error::Error>> {
+        use self::users::dsl::*;
+
+        let conn = &mut self.pool.get()?;
+        let results = users
+            .select((id, username, email, password))
+            .load::<(i32, String, String, String)>(conn)?;
+
+        Ok(results
+            .into_iter()
+            .map(|(user_id, user_username, user_email, user_password)| User {
+                id: user_id,
+                username: user_username,
+                email: user_email,
+                password: user_password,
+            })
+            .collect())
+    }
+
+    async fn update(&self, user_id: i32, user_dto: UpdateUserDto) -> Result<User, Box<dyn std::error::Error>> {
+        use self::users::dsl::*;
+
+        let conn = &mut self.pool.get()?;
+        let updated_user = diesel::update(users)
+            .filter(id.eq(user_id))
+            .set((
+                username.eq(&user_dto.username),
+                email.eq(&user_dto.email),
+                password.eq(&user_dto.password),
+            ))
+            .returning((id, username, email, password))
+            .get_result::<(i32, String, String, String)>(conn)?;
+
+        Ok(User {
+            id: updated_user.0,
+            username: updated_user.1,
+            email: updated_user.2,
+            password: updated_user.3,
+        })
+    }
+
+    async fn delete(&self, user_id: i32) -> Result<(), Box<dyn std::error::Error>> {
+        use self::users::dsl::*;
+
+        let conn = &mut self.pool.get()?;
+        diesel::delete(users)
+            .filter(id.eq(user_id))
+            .execute(conn)?;
+
+        Ok(())
+    }
+}
+
+--> presentation/auth_handlers.rs
+
+use actix_web::{web, HttpResponse, Responder};
+use serde_json::json;
+use crate::application::use_cases::auth_use_cases::{LoginUseCase, RegisterUseCase};
+use crate::domain::repositories::auth_repository::AuthRepository;
+use crate::domain::entities::auth::{AuthUser, RegisterUserDto};
+use tracing::debug;
+
+pub struct AuthHandlers<T: AuthRepository> {
+    login_use_case: LoginUseCase<T>,
+    register_use_case: RegisterUseCase<T>,
+}
+
+#[allow(dead_code)]
+impl<T: AuthRepository> AuthHandlers<T> {
+    pub fn new(login_use_case: LoginUseCase<T>, register_use_case: RegisterUseCase<T>) -> Self {
+        Self {
+            login_use_case,
+            register_use_case,
+        }
+    }
+
+    pub async fn login(&self, auth: web::Json<AuthUser>) -> impl Responder {
+        let username = auth.username.clone();
+        debug!("Login attempt for user: {}", username);
+
+        match self.login_use_case.execute(auth.into_inner()).await {
+            Ok(token) => {
+                debug!("Login successful for user: {}", username);
+                HttpResponse::Ok().json(token)
+            }
+            Err(e) => {
+                debug!("Login failed: {}", e);
+                HttpResponse::Unauthorized().json(json!({
+                    "error": "Authentication failed",
+                    "message": e.to_string()
+                }))
+            }
+        }
+    }
+
+    pub async fn register(&self, register_dto: web::Json<RegisterUserDto>) -> impl Responder {
+        match self.register_use_case.execute(register_dto.into_inner()).await {
+            Ok(user) => {
+                HttpResponse::Created().json(json!({
+                    "status": "success",
+                    "message": "User registered successfully",
+                    "data": {
+                        "id": user.id,
+                        "username": user.username,
+                        "email": user.email
+                    }
+                }))
+            }
+            Err(e) => {
+                let error_message = e.to_string();
+                HttpResponse::BadRequest().json(json!({
+                    "status": "error",
+                    "message": "Registration failed",
+                    "error": error_message
+                }))
+            }
+        }
+    }
+}
+
+#[allow(dead_code)]
+pub fn configure<T: AuthRepository + 'static>(
+    cfg: &mut web::ServiceConfig,
+    _handlers: web::Data<AuthHandlers<T>>,  // Removed underscore
+) {
+    cfg.service(
+        web::scope("/auth")
+            .route("/login", web::post().to(
+                |handlers: web::Data<AuthHandlers<T>>, auth: web::Json<AuthUser>| async move {
+                    handlers.login(auth).await
+                }
+            ))
+            .route("/register", web::post().to(
+                |handlers: web::Data<AuthHandlers<T>>, register_dto: web::Json<RegisterUserDto>| async move {
+                    handlers.register(register_dto).await
+                }
+            ))
+    );
+}
+
+--> presentation/handlers/user_handlers.rs
+
+use actix_web::{web, HttpResponse, Responder};
+
+use crate::application::use_cases::user_use_cases::{CreateUserUseCase, ListUsersUseCase, GetUserByIdUseCase, UpdateUserUseCase, DeleteUserUseCase};
+use crate::domain::repositories::user_repository::UserRepository;
+use crate::domain::entities::user::{CreateUserDto, UpdateUserDto};
+
+pub struct UserHandlers<T: UserRepository> {
+    get_user_use_case: GetUserByIdUseCase<T>,
+    create_user_use_case: CreateUserUseCase<T>,
+    list_users_use_case: ListUsersUseCase<T>,
+    update_user_use_case: UpdateUserUseCase<T>,
+    delete_user_use_case: DeleteUserUseCase<T>,
+}
+
+impl<T: UserRepository> UserHandlers<T> {
+    pub fn new(
+        get_user_use_case: GetUserByIdUseCase<T>,
+        create_user_use_case: CreateUserUseCase<T>,
+        list_users_use_case: ListUsersUseCase<T>,
+        update_user_use_case: UpdateUserUseCase<T>,
+        delete_user_use_case: DeleteUserUseCase<T>,
+    ) -> Self {
+        Self {
+            get_user_use_case,
+            create_user_use_case,
+            list_users_use_case,
+            update_user_use_case,
+            delete_user_use_case,
+        }
+    }
+
+    pub async fn get_user(&self, user_id: web::Path<i32>) -> impl Responder {
+        match self.get_user_use_case.execute(user_id.into_inner()).await {
+            Ok(user) => HttpResponse::Ok().json(user),
+            Err(_) => HttpResponse::NotFound().finish(),
+        }
+    }
+
+    pub async fn create_user(&self, user_dto: web::Json<CreateUserDto>) -> impl Responder {
+        match self.create_user_use_case.execute(user_dto.into_inner()).await {
+            Ok(user) => HttpResponse::Created().json(user),
+            Err(_) => HttpResponse::InternalServerError().finish(),
+        }
+    }
+
+    pub async fn list_users(&self) -> impl Responder {
+        match self.list_users_use_case.execute().await {
+            Ok(users) => HttpResponse::Ok().json(users),
+            Err(_) => HttpResponse::InternalServerError().finish(),
+        }
+    }
+
+    pub async fn update_user(&self, user_id: web::Path<i32>, user_dto: web::Json<UpdateUserDto>) -> impl Responder {
+        match self.update_user_use_case.execute(user_id.into_inner(), user_dto.into_inner()).await {
+            Ok(user) => HttpResponse::Ok().json(user),
+            Err(_) => HttpResponse::NotFound().finish(),
+        }
+    }
+
+    pub async fn delete_user(&self, user_id: web::Path<i32>) -> impl Responder {
+        match self.delete_user_use_case.execute(user_id.into_inner()).await {
+            Ok(_) => HttpResponse::NoContent().finish(),
+            Err(_) => HttpResponse::NotFound().finish(),
+        }
+    }
+}
+
+pub fn configure<T: UserRepository + 'static>(
+    cfg: &mut web::ServiceConfig,
+    _handlers: web::Data<UserHandlers<T>>,
+) {
+    cfg.service(
+        web::scope("/user")
+            .route("", web::get().to(move |handlers: web::Data<UserHandlers<T>>| async move {
+                handlers.list_users().await
+            }))
+            .route("/{id}", web::get().to(move |handlers: web::Data<UserHandlers<T>>, id: web::Path<i32>| async move {
+                handlers.get_user(id).await
+            }))
+            .route("", web::post().to(move |handlers: web::Data<UserHandlers<T>>, user_dto: web::Json<CreateUserDto>| async move {
+                handlers.create_user(user_dto).await
+            }))
+            .route("/{id}", web::put().to(move |handlers: web::Data<UserHandlers<T>>, id: web::Path<i32>, user_dto: web::Json<UpdateUserDto>| async move {
+                handlers.update_user(id, user_dto).await
+            }))
+            .route("/{id}", web::delete().to(move |handlers: web::Data<UserHandlers<T>>, id: web::Path<i32>| async move {
+                handlers.delete_user(id).await
+            })),
+    );
+}
+
+--> presentation/middleware/auth.rs
+
+use actix_web::error::ErrorUnauthorized;
+use actix_web::{Error, dev::ServiceRequest};
+use actix_web_httpauth::extractors::bearer::BearerAuth;
+use jsonwebtoken::{decode, DecodingKey, Validation};
+use crate::domain::entities::auth::Claims;
+
+#[allow(dead_code)]  // Added because the compiler can't detect usage through middleware configuration
+pub async fn validator(req: ServiceRequest, credentials: BearerAuth)
+                       -> Result<ServiceRequest, (Error, ServiceRequest)> {
+    let secret_key = std::env::var("SECRET_KEY").expect("SECRET_KEY must be set");
+    let token = credentials.token();
+
+    match decode::<Claims>(
+        token,
+        &DecodingKey::from_secret(secret_key.as_bytes()),
+        &Validation::default(),
+    ) {
+        Ok(_) => Ok(req),
+        Err(_) => Err((ErrorUnauthorized("Invalid token"), req)),
+    }
+}
+

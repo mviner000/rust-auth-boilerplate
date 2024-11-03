@@ -17,10 +17,7 @@ pub struct AuthRepositoryImpl {
 }
 
 impl AuthRepositoryImpl {
-<<<<<<< HEAD
-=======
     #[allow(dead_code)]
->>>>>>> cd01ba0 (first commit)
     pub fn new(pool: Pool<ConnectionManager<PgConnection>>, secret_key: String) -> Self {
         let salt = secret_key.as_bytes()[..16]
             .try_into()
