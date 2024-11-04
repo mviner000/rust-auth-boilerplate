@@ -6,9 +6,9 @@ services:
     ports:
       - "5432:5432"
     environment:
-      POSTGRES_USER: new_user       # Update to your new username
-      POSTGRES_PASSWORD: new_password # Update to your new password
-      POSTGRES_DB: new_database      # Update to your new database name
+      POSTGRES_USER: new_user
+      POSTGRES_PASSWORD: new_password
+      POSTGRES_DB: new_database
     volumes:
       - postgres_data:/var/lib/postgresql/data
 

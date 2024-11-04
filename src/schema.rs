@@ -7,6 +7,16 @@ diesel::table! {
         first_name -> Nullable<Varchar>,
         middle_name -> Nullable<Varchar>,
         last_name -> Nullable<Varchar>,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
+        default_avatar_id -> Nullable<Int4>,
+    }
+}
+
+diesel::table! {
+    avatars (id) {
+        id -> Int4,
+        account_id -> Int4,
         avatar_300x300_url -> Nullable<Varchar>,
         avatar_40x40_url -> Nullable<Varchar>,
         created_at -> Timestamp,
@@ -61,6 +71,7 @@ diesel::joinable!(user_roles -> users (user_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
     accounts,
+    avatars,
     messages,
     roles,
     user_roles,
