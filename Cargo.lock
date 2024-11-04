@@ -2041,6 +2041,8 @@ dependencies = [
  "image",
  "jsonwebtoken",
  "log",
+ "mime",
+ "mime_guess",
  "mockall",
  "reqwest",
  "rpassword",

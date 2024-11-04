@@ -19,11 +19,13 @@ use infrastructure::{
         user_repository::UserRepositoryImpl,
         auth_repository::AuthRepositoryImpl,
         account_repository::AccountRepositoryImpl,
+        avatar_repository::AvatarRepositoryImpl,
     },
 };
 
 use crate::application::use_cases::{
-    account_use_cases::{GetAccountUseCase, UpdateAccountUseCase, UploadAvatarUseCase},
+    account_use_cases::{GetAccountUseCase, UpdateAccountUseCase},
+    avatar_use_cases::UploadAvatarUseCase,
     user_use_cases::{GetUserByIdUseCase, CreateUserUseCase, ListUsersUseCase, DeleteUserUseCase, UpdateUserUseCase},
     auth_use_cases::{LoginUseCase, RegisterUseCase},
 };
@@ -33,6 +35,7 @@ use presentation::{
         user_handlers::{UserHandlers, configure as user_configure},
         auth_handlers::{AuthHandlers, configure as auth_configure},
         account_handlers::{AccountHandlers, configure as account_configure},
+        avatar_handlers::{AvatarHandlers, configure as avatar_configure},
     },
     middleware::auth::validator,
 };
@@ -72,6 +75,8 @@ async fn main() -> std::io::Result<()> {
     let user_repository = UserRepositoryImpl::new(pool.clone());
     let auth_repository = AuthRepositoryImpl::new(pool.clone(), secret_key);
     let account_repository = AccountRepositoryImpl::new(pool.clone());
+    let avatar_repository = AvatarRepositoryImpl::new(pool.clone());
+    let message_repository = MessageRepositoryImpl::new(pool.clone());
 
     // Initialize use cases
     let get_user_use_case = GetUserByIdUseCase::new(user_repository.clone());
@@ -80,17 +85,19 @@ async fn main() -> std::io::Result<()> {
     let update_user_use_case = UpdateUserUseCase::new(user_repository.clone());
     let delete_user_use_case = DeleteUserUseCase::new(user_repository);
 
-    let message_repository = MessageRepositoryImpl::new(pool.clone());
     let send_message_use_case = SendMessageUseCase::new(message_repository.clone());
     let get_messages_use_case = GetMessagesUseCase::new(message_repository);
 
     let login_use_case = LoginUseCase::new(auth_repository.clone());
     let register_use_case = RegisterUseCase::new(auth_repository);
 
-    let upload_dir = PathBuf::from("uploads");
     let get_account_use_case = GetAccountUseCase::new(account_repository.clone());
     let update_account_use_case = UpdateAccountUseCase::new(account_repository.clone());
-    let upload_avatar_use_case = UploadAvatarUseCase::new(account_repository, upload_dir);
+    let upload_avatar_use_case = UploadAvatarUseCase::new(
+        avatar_repository.clone(),
+        account_repository.clone(),
+        upload_dir,
+    );
 
     // Initialize handlers
     let user_handlers = web::Data::new(UserHandlers::new(
@@ -109,6 +116,9 @@ async fn main() -> std::io::Result<()> {
     let account_handlers = web::Data::new(AccountHandlers::new(
         get_account_use_case,
         update_account_use_case,
+    ));
+
+    let avatar_handlers = web::Data::new(AvatarHandlers::new(
         upload_avatar_use_case,
     ));
 
@@ -147,10 +157,10 @@ async fn main() -> std::io::Result<()> {
             .app_data(user_handlers.clone())
             .app_data(auth_handlers.clone())
             .app_data(account_handlers.clone())
+            .app_data(avatar_handlers.clone())
             .app_data(user_status_manager_data.clone())
             .app_data(realtime_message_manager_data.clone())
-            // Add WebSocket routes before the API routes
-            .configure(ws_handlers::configure)  // Add this line
+            .configure(ws_handlers::configure)
             .service(Files::new("/uploads", "uploads").show_files_listing())
             .service(
                 web::scope("/api/v1")
@@ -160,6 +170,7 @@ async fn main() -> std::io::Result<()> {
                             .wrap(auth.clone())
                             .configure(|cfg| user_configure(cfg, user_handlers.clone()))
                             .configure(|cfg| account_configure(cfg, account_handlers.clone()))
+                            .configure(|cfg| avatar_configure(cfg, avatar_handlers.clone()))
                             .configure(|cfg| message_handlers::configure(cfg, message_handlers.clone()))
                     )
             )
