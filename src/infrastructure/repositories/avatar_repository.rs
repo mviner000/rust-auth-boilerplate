@@ -6,14 +6,14 @@ use crate::schema::avatars;
 use crate::domain::entities::avatar::Avatar;
 use crate::domain::repositories::avatar_repository::AvatarRepository;
 
-#[derive(Queryable)]
-struct AvatarRecord {
-    id: i32,
-    account_id: i32,
-    avatar_300x300_url: Option<String>,
-    avatar_40x40_url: Option<String>,
-    created_at: chrono::NaiveDateTime,
-    updated_at: chrono::NaiveDateTime,
+#[derive(Queryable, Debug)]
+pub(crate) struct AvatarRecord {
+    pub id: i32,
+    pub account_id: i32,
+    pub avatar_300x300_url: Option<String>,
+    pub avatar_40x40_url: Option<String>,
+    pub created_at: chrono::NaiveDateTime,
+    pub updated_at: chrono::NaiveDateTime,
 }
 
 #[derive(Clone)]

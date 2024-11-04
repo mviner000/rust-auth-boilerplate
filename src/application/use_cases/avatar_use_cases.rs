@@ -1,17 +1,19 @@
-use std::path::PathBuf;
-use image::{DynamicImage, imageops};
+use std::path::{Path, PathBuf};
 use uuid::Uuid;
+use image::{ImageOutputFormat};
 use webp::Encoder;
-use crate::domain::entities::avatar::{Avatar, AvatarUploadResponse};
+use crate::domain::entities::avatar::AvatarUploadResponse;
 use crate::domain::repositories::avatar_repository::AvatarRepository;
 use crate::domain::repositories::account_repository::AccountRepository;
+
+const LARGE_SIZE: u32 = 300;
+const SMALL_SIZE: u32 = 40;
 
 pub struct UploadAvatarUseCase<T: AvatarRepository, U: AccountRepository> {
     avatar_repository: T,
     account_repository: U,
     upload_dir: PathBuf,
 }
-
 
 impl<T: AvatarRepository, U: AccountRepository> UploadAvatarUseCase<T, U> {
     pub fn new(avatar_repository: T, account_repository: U, upload_dir: PathBuf) -> Self {
@@ -22,50 +24,44 @@ impl<T: AvatarRepository, U: AccountRepository> UploadAvatarUseCase<T, U> {
         }
     }
 
-    async fn convert_to_webp(img: &DynamicImage) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
-        let rgba = img.to_rgba8();
-        let width = rgba.width() as u32;
-        let height = rgba.height() as u32;
-
-        let encoder = Encoder::from_rgba(&rgba, width, height);
-        let encoded = encoder.encode(80.0);
-        Ok(encoded.to_vec())
-    }
-
     pub async fn execute(&self, account_id: i32, image_data: Vec<u8>) -> Result<AvatarUploadResponse, Box<dyn std::error::Error>> {
-        tokio::fs::create_dir_all(&self.upload_dir).await?;
+        // Create account-specific directory
+        let account_dir = self.upload_dir.join(account_id.to_string());
+        std::fs::create_dir_all(&account_dir)?;
 
-        let large_webp = format!("300_{}.webp", Uuid::new_v4());
-        let small_webp = format!("40_{}.webp", Uuid::new_v4());
-
-        let large_webp_path = self.upload_dir.join(&large_webp);
-        let small_webp_path = self.upload_dir.join(&small_webp);
-
+        // Process images
         let img = image::load_from_memory(&image_data)?;
 
-        // Create 300x300 version
-        let large = imageops::resize(&img, 300, 300, imageops::FilterType::Lanczos3);
-        let large_img = DynamicImage::ImageRgba8(large);
-        let large_webp_data = Self::convert_to_webp(&large_img).await?;
-        tokio::fs::write(&large_webp_path, large_webp_data).await?;
+        // Generate UUIDs for filenames
+        let large_uuid = Uuid::new_v4();
+        let small_uuid = Uuid::new_v4();
 
-        // Create 40x40 version
-        let small = imageops::resize(&img, 40, 40, imageops::FilterType::Lanczos3);
-        let small_img = DynamicImage::ImageRgba8(small);
-        let small_webp_data = Self::convert_to_webp(&small_img).await?;
-        tokio::fs::write(&small_webp_path, small_webp_data).await?;
+        // Process large image (300x300)
+        let large_image = img.resize(LARGE_SIZE, LARGE_SIZE, image::imageops::FilterType::Lanczos3);
+        let large_filename = format!("300_{}.webp", large_uuid);
+        let large_path = account_dir.join(&large_filename);
+        let large_webp = self.create_webp(&large_image)?;
+        std::fs::write(&large_path, large_webp)?;
 
-        let large_url = format!("/uploads/{}", large_webp);
-        let small_url = format!("/uploads/{}", small_webp);
+        // Process small image (40x40)
+        let small_image = img.resize(SMALL_SIZE, SMALL_SIZE, image::imageops::FilterType::Lanczos3);
+        let small_filename = format!("40_{}.webp", small_uuid);
+        let small_path = account_dir.join(&small_filename);
+        let small_webp = self.create_webp(&small_image)?;
+        std::fs::write(&small_path, small_webp)?;
 
-        // Create new avatar record
+        // Create URLs (relative to upload directory)
+        let large_url = format!("/uploads/{}/{}", account_id, large_filename);
+        let small_url = format!("/uploads/{}/{}", account_id, small_filename);
+
+        // Save to database and set as default avatar
         let avatar = self.avatar_repository.create(
             account_id,
             large_url.clone(),
             small_url.clone(),
         ).await?;
 
-        // Update account's default avatar
+        // Set as default avatar
         self.account_repository.set_default_avatar(account_id, avatar.id).await?;
 
         Ok(AvatarUploadResponse {
@@ -73,5 +69,12 @@ impl<T: AvatarRepository, U: AccountRepository> UploadAvatarUseCase<T, U> {
             avatar_40x40_url: small_url,
             message: "Avatar uploaded successfully".to_string(),
         })
+    }
+
+    fn create_webp(&self, img: &image::DynamicImage) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+        let rgba = img.to_rgba8();
+        let encoder = Encoder::from_rgba(&rgba, img.width(), img.height());
+        let encoded = encoder.encode(75f32); // Quality factor of 75
+        Ok(encoded.to_vec())
     }
 }

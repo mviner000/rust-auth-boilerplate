@@ -3,7 +3,9 @@ use diesel::{PgConnection, QueryDsl, RunQueryDsl};
 use crate::schema::accounts;
 use crate::domain::entities::account::{Account, UpdateAccountDto};
 use async_trait::async_trait;
+use crate::domain::entities::avatar::Avatar;
 use crate::domain::repositories::account_repository::AccountRepository;
+use super::avatar_repository::AvatarRecord;
 
 #[derive(Queryable, Selectable)]
 #[diesel(table_name = accounts)]
@@ -87,7 +89,10 @@ impl AccountRepository for AccountRepositoryImpl {
             .select(AccountRecord::as_select())
             .first(&mut conn)?;
 
-        Ok(Account::from(record))
+        let mut account = Account::from(record);
+        self.load_default_avatar(&mut account).await?;
+
+        Ok(account)
     }
 
     async fn update(&self, user_id: i32, dto: UpdateAccountDto) -> Result<Account, Box<dyn std::error::Error>> {
@@ -102,7 +107,10 @@ impl AccountRepository for AccountRepositoryImpl {
             .returning(AccountRecord::as_select())
             .get_result(&mut conn)?;
 
-        Ok(Account::from(record))
+        let mut account = Account::from(record);
+        self.load_default_avatar(&mut account).await?;
+
+        Ok(account)
     }
 
     async fn set_default_avatar(&self, user_id: i32, avatar_id: i32) -> Result<Account, Box<dyn std::error::Error>> {
@@ -119,6 +127,35 @@ impl AccountRepository for AccountRepositoryImpl {
             .returning(AccountRecord::as_select())
             .get_result(&mut conn)?;
 
-        Ok(Account::from(record))
+        let mut account = Account::from(record);
+        self.load_default_avatar(&mut account).await?;
+
+        Ok(account)
+    }
+
+    async fn load_default_avatar(&self, account: &mut Account) -> Result<(), Box<dyn std::error::Error>> {
+        use crate::schema::avatars::dsl::*;
+
+        if let Some(avatar_id) = account.default_avatar_id {
+            let mut conn = self.pool.get()?;
+
+            let avatar_record = avatars
+                .find(avatar_id)
+                .first::<AvatarRecord>(&mut conn)
+                .optional()?;
+
+            if let Some(record) = avatar_record {
+                account.default_avatar = Some(Avatar {
+                    id: record.id,
+                    account_id: record.account_id,
+                    avatar_300x300_url: record.avatar_300x300_url,
+                    avatar_40x40_url: record.avatar_40x40_url,
+                    created_at: record.created_at,
+                    updated_at: record.updated_at,
+                });
+            }
+        }
+
+        Ok(())
     }
 }

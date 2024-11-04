@@ -6,7 +6,7 @@ use serde_json::Value;
 
 const API_BASE_URL: &str = "http://127.0.0.1:8080/api/v1";
 const TEST_ACCOUNT_ID: i32 = 1;
-const TEST_BEARER_TOKEN: &str = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOjEsImV4cCI6MTczMDgwODQ2NCwiaWF0IjoxNzMwNzIyMDY0fQ.Cx09DlbQ1GXO1Dia_1ba6IWyU8E-eQjisccGVXUGHNE";
+const TEST_BEARER_TOKEN: &str = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOjEsImV4cCI6MTczMDgxMDgxMiwiaWF0IjoxNzMwNzI0NDEyfQ.IbiIvrrjEIREROrjZ6FkX4Pk_kBJ9Z-JuxQhsfjbDtQ";
 
 struct TestClient {
     client: Client,
