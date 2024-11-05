@@ -77,14 +77,14 @@ where
         let large_url = format!("/uploads/{}/{}", account_id, large_filename);
         let small_url = format!("/uploads/{}/{}", account_id, small_filename);
 
-        // Save to database and set as default avatar
+        // Save to database
         let avatar = self.avatar_repository.create(
             account_id,
             large_url.clone(),
             small_url.clone(),
         ).await?;
 
-        // Set as default avatar
+        // Set as default avatar for THIS account only
         self.account_repository.set_default_avatar(account_id, avatar.id).await?;
 
         Ok(AvatarUploadResponse {

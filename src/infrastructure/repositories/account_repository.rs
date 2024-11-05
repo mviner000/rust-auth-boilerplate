@@ -30,16 +30,29 @@ pub struct NewAccount {
     pub last_name: Option<String>,
 }
 
-impl From<AccountRecord> for Account {
-    fn from(record: AccountRecord) -> Self {
+impl AccountRepositoryImpl {
+    async fn get_username(&self, user_id: i32) -> Result<String, Box<dyn std::error::Error>> {
+        use crate::schema::users::dsl::*;
+        let mut conn = self.pool.get()?;
+        let username_result = users
+            .filter(id.eq(user_id))
+            .select(username)
+            .first::<String>(&mut conn)?;
+        Ok(username_result)
+    }
+}
+
+impl From<(AccountRecord, String)> for Account {
+    fn from((record, username): (AccountRecord, String)) -> Self {
         Account {
             id: record.id,
             user_id: record.user_id,
+            username,
             first_name: record.first_name,
             middle_name: record.middle_name,
             last_name: record.last_name,
             default_avatar_id: record.default_avatar_id,
-            default_avatar: None, // You might want to load this separately if needed
+            default_avatar: None,
             created_at: record.created_at,
             updated_at: record.updated_at,
         }
@@ -88,11 +101,12 @@ impl AccountRepository for AccountRepositoryImpl {
             .select(AccountRecord::as_select())
             .load::<AccountRecord>(&mut conn)?;
 
-        let mut account_list = records.into_iter().map(Account::from).collect::<Vec<_>>();
-
-        // Load default avatars for all accounts
-        for account in &mut account_list {
-            self.load_default_avatar(account).await?;
+        let mut account_list = Vec::new();
+        for record in records {
+            let username = self.get_username(record.user_id).await?;
+            let mut account = Account::from((record, username));
+            self.load_default_avatar(&mut account).await?;
+            account_list.push(account);
         }
 
         Ok(account_list)
@@ -107,7 +121,8 @@ impl AccountRepository for AccountRepositoryImpl {
             .select(AccountRecord::as_select())
             .first(&mut conn)?;
 
-        let mut account = Account::from(record);
+        let username = self.get_username(record.user_id).await?;
+        let mut account = Account::from((record, username));
         self.load_default_avatar(&mut account).await?;
 
         Ok(account)
@@ -125,19 +140,35 @@ impl AccountRepository for AccountRepositoryImpl {
             .returning(AccountRecord::as_select())
             .get_result(&mut conn)?;
 
-        let mut account = Account::from(record);
+        let username = self.get_username(record.user_id).await?;
+        let mut account = Account::from((record, username));
         self.load_default_avatar(&mut account).await?;
 
         Ok(account)
     }
 
-    async fn set_default_avatar(&self, user_id: i32, avatar_id: i32) -> Result<Account, Box<dyn std::error::Error>> {
+    async fn set_default_avatar(&self, account_id: i32, avatar_id: i32) -> Result<Account, Box<dyn std::error::Error>> {
         use crate::schema::accounts::dsl::*;
-
         let mut conn = self.pool.get()?;
 
+        // First verify that the avatar belongs to this account
+        use crate::schema::avatars::dsl as avatars_dsl;
+        let avatar_exists = avatars_dsl::avatars
+            .filter(avatars_dsl::id.eq(avatar_id))
+            .filter(avatars_dsl::account_id.eq(account_id))
+            .count()
+            .get_result::<i64>(&mut conn)?;
+
+        if avatar_exists == 0 {
+            return Err(Box::new(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "Avatar does not belong to this account"
+            )));
+        }
+
+        // Update only this specific account's avatar
         let record = diesel::update(accounts)
-            .filter(user_id.eq(user_id))
+            .filter(id.eq(account_id))  // Changed from user_id to id
             .set((
                 default_avatar_id.eq(Some(avatar_id)),
                 updated_at.eq(chrono::Local::now().naive_utc()),
@@ -145,7 +176,8 @@ impl AccountRepository for AccountRepositoryImpl {
             .returning(AccountRecord::as_select())
             .get_result(&mut conn)?;
 
-        let mut account = Account::from(record);
+        let username = self.get_username(record.user_id).await?;
+        let mut account = Account::from((record, username));
         self.load_default_avatar(&mut account).await?;
 
         Ok(account)

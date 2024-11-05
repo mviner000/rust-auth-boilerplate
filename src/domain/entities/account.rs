@@ -6,6 +6,7 @@ use crate::domain::entities::avatar::Avatar;
 pub struct Account {
     pub id: i32,
     pub user_id: i32,
+    pub username: String,  // Add this field
     pub first_name: Option<String>,
     pub middle_name: Option<String>,
     pub last_name: Option<String>,
