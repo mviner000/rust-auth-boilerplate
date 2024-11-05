@@ -1,12 +1,13 @@
+use std::sync::Arc;
 use crate::domain::repositories::account_repository::AccountRepository;
 use crate::domain::entities::account::{Account, UpdateAccountDto};
 
 pub struct GetAccountUseCase<T: AccountRepository> {
-    account_repository: T,
+    account_repository: Arc<T>,
 }
 
 impl<T: AccountRepository> GetAccountUseCase<T> {
-    pub fn new(account_repository: T) -> Self {
+    pub fn new(account_repository: Arc<T>) -> Self {
         Self { account_repository }
     }
 
@@ -15,12 +16,26 @@ impl<T: AccountRepository> GetAccountUseCase<T> {
     }
 }
 
+pub struct GetAllAccountsUseCase<T: AccountRepository> {
+    repository: Arc<T>,
+}
+
+impl<T: AccountRepository> GetAllAccountsUseCase<T> {
+    pub fn new(repository: Arc<T>) -> Self {
+        Self { repository }
+    }
+
+    pub async fn execute(&self) -> Result<Vec<Account>, Box<dyn std::error::Error>> {
+        self.repository.get_all().await
+    }
+}
+
 pub struct UpdateAccountUseCase<T: AccountRepository> {
-    account_repository: T,
+    account_repository: Arc<T>,
 }
 
 impl<T: AccountRepository> UpdateAccountUseCase<T> {
-    pub fn new(account_repository: T) -> Self {
+    pub fn new(account_repository: Arc<T>) -> Self {
         Self { account_repository }
     }
 

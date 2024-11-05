@@ -2,18 +2,47 @@ use actix_web::{web, HttpResponse, Responder};
 use actix_multipart::Multipart;
 use futures::{StreamExt, TryStreamExt};
 use mime_guess::from_path;
+use std::sync::Arc;
 use crate::application::use_cases::avatar_use_cases::UploadAvatarUseCase;
 use crate::domain::repositories::avatar_repository::AvatarRepository;
 use crate::domain::repositories::account_repository::AccountRepository;
 
-pub struct AvatarHandlers<T: AvatarRepository, U: AccountRepository> {
+pub struct AvatarHandlers<T, U>
+where
+    T: AvatarRepository + Send + Sync + 'static,
+    U: AccountRepository + Send + Sync + 'static,
+{
     upload_avatar_use_case: UploadAvatarUseCase<T, U>,
 }
 
-impl<T: AvatarRepository, U: AccountRepository> AvatarHandlers<T, U> {
+impl<T, U> AvatarHandlers<T, U>
+where
+    T: AvatarRepository + Send + Sync + 'static,
+    U: AccountRepository + Send + Sync + 'static,
+{
     pub fn new(upload_avatar_use_case: UploadAvatarUseCase<T, U>) -> Self {
         Self {
             upload_avatar_use_case,
+        }
+    }
+
+    pub async fn get_avatar(&self, account_id: web::Path<i32>) -> impl Responder {
+        match self.upload_avatar_use_case.get_avatar(account_id.into_inner()).await {
+            Ok(Some(urls)) => {
+                HttpResponse::Ok().json(urls)
+            },
+            Ok(None) => {
+                HttpResponse::NotFound().json(serde_json::json!({
+                    "error": "Avatar not found",
+                    "message": "No avatar exists for this account"
+                }))
+            },
+            Err(e) => {
+                HttpResponse::InternalServerError().json(serde_json::json!({
+                    "error": "Failed to retrieve avatar",
+                    "message": e.to_string()
+                }))
+            }
         }
     }
 
@@ -64,14 +93,21 @@ impl<T: AvatarRepository, U: AccountRepository> AvatarHandlers<T, U> {
     }
 }
 
-pub fn configure<T: AvatarRepository + 'static, U: AccountRepository + 'static>(
+pub fn configure<T, U>(
     cfg: &mut web::ServiceConfig,
     handlers: web::Data<AvatarHandlers<T, U>>,
-) {
+)
+where
+    T: AvatarRepository + Send + Sync + 'static,
+    U: AccountRepository + Send + Sync + 'static,
+{
     cfg.service(
         web::scope("/avatars")
             .route("/{account_id}", web::post().to(move |handlers: web::Data<AvatarHandlers<T, U>>, account_id: web::Path<i32>, payload: Multipart| async move {
                 handlers.upload_avatar(account_id, payload).await
+            }))
+            .route("/{account_id}", web::get().to(move |handlers: web::Data<AvatarHandlers<T, U>>, account_id: web::Path<i32>| async move {
+                handlers.get_avatar(account_id).await
             }))
     );
 }

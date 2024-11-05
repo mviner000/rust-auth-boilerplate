@@ -79,6 +79,24 @@ impl AccountRepositoryImpl {
 
 #[async_trait]
 impl AccountRepository for AccountRepositoryImpl {
+    async fn get_all(&self) -> Result<Vec<Account>, Box<dyn std::error::Error>> {
+        use crate::schema::accounts::dsl::*;
+
+        let mut conn = self.pool.get()?;
+
+        let records = accounts
+            .select(AccountRecord::as_select())
+            .load::<AccountRecord>(&mut conn)?;
+
+        let mut account_list = records.into_iter().map(Account::from).collect::<Vec<_>>();
+
+        // Load default avatars for all accounts
+        for account in &mut account_list {
+            self.load_default_avatar(account).await?;
+        }
+
+        Ok(account_list)
+    }
     async fn find_by_user_id(&self, user_id: i32) -> Result<Account, Box<dyn std::error::Error>> {
         use crate::schema::accounts::dsl::*;
 

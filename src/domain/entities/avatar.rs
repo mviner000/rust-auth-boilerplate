@@ -17,3 +17,10 @@ pub struct AvatarUploadResponse {
     pub avatar_40x40_url: String,
     pub message: String,
 }
+
+#[derive(Debug, Serialize)]
+pub struct AvatarUrls {
+    pub avatar_300x300_url: String,
+    pub avatar_40x40_url: String,
+}
+

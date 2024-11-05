@@ -24,7 +24,7 @@ use infrastructure::{
 };
 
 use crate::application::use_cases::{
-    account_use_cases::{GetAccountUseCase, UpdateAccountUseCase},
+    account_use_cases::{GetAccountUseCase, UpdateAccountUseCase, GetAllAccountsUseCase},
     avatar_use_cases::UploadAvatarUseCase,
     user_use_cases::{GetUserByIdUseCase, CreateUserUseCase, ListUsersUseCase, DeleteUserUseCase, UpdateUserUseCase},
     auth_use_cases::{LoginUseCase, RegisterUseCase},
@@ -91,8 +91,14 @@ async fn main() -> std::io::Result<()> {
     let login_use_case = LoginUseCase::new(auth_repository.clone());
     let register_use_case = RegisterUseCase::new(auth_repository);
 
+
+    let account_repository = Arc::new(AccountRepositoryImpl::new(pool.clone()));
+
+    // Initialize account use cases with Arc-wrapped repository
     let get_account_use_case = GetAccountUseCase::new(account_repository.clone());
     let update_account_use_case = UpdateAccountUseCase::new(account_repository.clone());
+    let get_all_accounts_use_case = GetAllAccountsUseCase::new(account_repository.clone());
+
     let upload_avatar_use_case = UploadAvatarUseCase::new(
         avatar_repository.clone(),
         account_repository.clone(),
@@ -116,6 +122,7 @@ async fn main() -> std::io::Result<()> {
     let account_handlers = web::Data::new(AccountHandlers::new(
         get_account_use_case,
         update_account_use_case,
+        get_all_accounts_use_case,
     ));
 
     let avatar_handlers = web::Data::new(AvatarHandlers::new(

@@ -2,26 +2,49 @@ use std::path::{Path, PathBuf};
 use uuid::Uuid;
 use image::{ImageOutputFormat};
 use webp::Encoder;
-use crate::domain::entities::avatar::AvatarUploadResponse;
+use crate::domain::entities::avatar::{AvatarUploadResponse, AvatarUrls};
 use crate::domain::repositories::avatar_repository::AvatarRepository;
 use crate::domain::repositories::account_repository::AccountRepository;
+use std::sync::Arc;
 
 const LARGE_SIZE: u32 = 300;
 const SMALL_SIZE: u32 = 40;
 
-pub struct UploadAvatarUseCase<T: AvatarRepository, U: AccountRepository> {
+pub struct UploadAvatarUseCase<T, U>
+where
+    T: AvatarRepository + Send + Sync,
+    U: AccountRepository + Send + Sync,
+{
     avatar_repository: T,
-    account_repository: U,
+    account_repository: Arc<U>,
     upload_dir: PathBuf,
 }
 
-impl<T: AvatarRepository, U: AccountRepository> UploadAvatarUseCase<T, U> {
-    pub fn new(avatar_repository: T, account_repository: U, upload_dir: PathBuf) -> Self {
+impl<T, U> UploadAvatarUseCase<T, U>
+where
+    T: AvatarRepository + Send + Sync,
+    U: AccountRepository + Send + Sync,
+{
+    pub fn new(avatar_repository: T, account_repository: Arc<U>, upload_dir: PathBuf) -> Self {
         Self {
             avatar_repository,
             account_repository,
             upload_dir,
         }
+    }
+
+    pub async fn get_avatar(&self, account_id: i32) -> Result<Option<AvatarUrls>, Box<dyn std::error::Error>> {
+        let avatar = self.avatar_repository.find_latest_by_account_id(account_id).await?;
+
+        Ok(avatar.and_then(|a| {
+            match (a.avatar_300x300_url, a.avatar_40x40_url) {
+                (Some(large_url), Some(small_url)) => Some(AvatarUrls {
+                    avatar_300x300_url: large_url,
+                    avatar_40x40_url: small_url,
+                }),
+                _ => None
+            }
+        }))
     }
 
     pub async fn execute(&self, account_id: i32, image_data: Vec<u8>) -> Result<AvatarUploadResponse, Box<dyn std::error::Error>> {
